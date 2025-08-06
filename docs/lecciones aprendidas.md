@@ -1058,3 +1058,404 @@ Mongo Express → Usuario: admin / Clave: pass
 RedisInsight → Sin clave inicial (se configura al entrar)
 
 Jupyter Notebook → Clave: pass
+
+---
+
+Registro de tarea – Jupyter Notebook no disponible tras reinicio de VM
+Fecha/Hora: 2025-08-06
+Recurso afectado: vm-cftec-m62025-SINT646-lab01
+Servicio(s) implicado(s): Jupyter Notebook, MongoDB, Redis, HBase, RedisInsight
+
+Resumen
+Después de reiniciar la máquina virtual, el servicio de Jupyter Notebook dejó de responder en el puerto 8888 (ERR_CONNECTION_REFUSED).
+Esto se debe a que el proceso de Jupyter no se inicia automáticamente al reiniciar la VM y tampoco estaba corriendo en un proceso persistente.
+
+Acciones ejecutadas
+Verificación de conectividad:
+
+Confirmado que el puerto 8888 está permitido en el NSG para la IP del usuario.
+
+Verificado que no hay reglas de firewall adicionales que bloqueen el acceso.
+
+Análisis del proceso:
+
+Validado que no existe ninguna sesión tmux activa con Jupyter Notebook (tmux attach -t jupyterlab → no sessions).
+
+Determinado que el proceso no sobrevive a reinicios.
+
+Propuesta de solución inmediata:
+
+Iniciar manualmente Jupyter en una nueva sesión tmux:
+
+bash
+Copy
+Edit
+tmux new -s jupyterlab
+jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser
+Luego salir de tmux con Ctrl+B y D.
+
+Propuesta de solución permanente:
+
+Modificar el script restart_lab_services.sh para que Jupyter Notebook se ejecute automáticamente en un tmux al reiniciar la VM:
+
+bash
+Copy
+Edit
+tmux new -d -s jupyterlab "jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser"
+Definición del problema (perspectiva cliente)
+Después de reiniciar la VM, los servicios de laboratorio deben estar disponibles sin intervención manual. Actualmente, MongoDB, Redis, HBase y RedisInsight se inician automáticamente, pero Jupyter Notebook requiere ejecución manual.
+
+Próximos pasos acordados
+Actualizar restart_lab_services.sh para incluir el arranque automático de Jupyter en tmux.
+
+Validar después del próximo reinicio que Jupyter esté disponible en el puerto 8888 sin intervención manual.
+
+Documentar procedimiento para levantarlo manualmente en caso de emergencia.
+
+---
+
+Registro de tarea — Limpieza y Preprocesamiento del Dataset
+Resumen:
+Se realizó la limpieza y preprocesamiento del dataset kz.csv proveniente del conjunto E-commerce Purchase History from Electronics Store. El dataset original contenía 2,633,521 registros y 8 columnas. Se identificaron valores nulos en varias columnas, especialmente en category_id, category_code, brand, price y user_id.
+
+Acciones ejecutadas:
+
+Carga inicial del dataset en un DataFrame de Pandas.
+
+Análisis exploratorio inicial para identificar:
+
+Tipo de datos por columna.
+
+Número total de registros.
+
+Cantidad de valores nulos por columna.
+
+Estrategia de preprocesamiento definida:
+
+Mantener todas las columnas para consistencia con las otras bases de datos.
+
+Eliminar o imputar valores nulos solo si impactan en los cálculos solicitados.
+
+No realizar transformaciones destructivas sobre price o brand sin análisis posterior.
+
+Verificación de memoria para asegurar que las operaciones no saturen la VM.
+
+Guardado del DataFrame limpio para su uso posterior en inserción en MongoDB, Redis y HBase.
+
+Definición del problema desde la perspectiva del cliente:
+Necesitamos garantizar que el dataset esté limpio y consistente para que los resultados de las consultas comparativas entre bases de datos sean fiables y no estén sesgados por datos faltantes o inconsistentes.
+
+Próximos pasos:
+
+Verificar nuevamente valores nulos en el dataset limpio.
+
+Realizar inserción por bloques en MongoDB, Redis y HBase para evitar saturar la VM.
+
+Documentar tiempos de inserción y respuesta para consultas clave.
+
+---
+
+Registro de tarea — Limpieza y Preprocesamiento del Dataset (Actualización)
+Hallazgos tras la verificación de valores nulos:
+
+Columna	Valores Nulos	% del Total aprox.
+event_time	0	0.00%
+order_id	0	0.00%
+product_id	0	0.00%
+category_id	431,954	16.40%
+category_code	612,202	23.20%
+brand	506,005	19.20%
+price	431,954	16.40%
+user_id	2,069,352	78.60%
+
+Conclusiones de esta verificación:
+
+event_time, order_id y product_id están completos.
+
+user_id presenta una ausencia significativa (~78%), lo que lo hace poco confiable para análisis directos.
+
+Las columnas de categoría (category_id, category_code), brand y price presentan un porcentaje relevante de nulos.
+
+No se ha aplicado imputación o eliminación de registros todavía para conservar la integridad y representatividad del dataset.
+
+Próximo paso inmediato:
+
+Mantener el dataset tal cual para inserción en MongoDB, Redis y HBase, documentando el porcentaje de nulos para que se considere en el análisis de consultas.
+
+Evaluar más adelante si se imputan o eliminan estos nulos dependiendo de los requisitos de las consultas comparativas.
+
+---
+
+Registro de tarea — Carga del dataset en Redis
+Objetivo
+Cargar el dataset E-commerce Purchase History en Redis de forma controlada, optimizando el rendimiento y evitando la duplicación de datos provenientes de ejecuciones anteriores.
+
+Acciones ejecutadas
+Conexión a Redis usando redis-py (redis.Redis()), con verificación de disponibilidad mediante ping().
+
+Lectura del dataset en pandas.DataFrame desde la ruta ./datasets/ecommerce/kz.csv.
+
+Definición de CHUNK_SIZE = 100_000 para realizar inserciones en bloques y reducir el riesgo de saturar la VM.
+
+Eliminación previa de datos antiguos:
+
+Identificación de claves con patrón purchase:*.
+
+Eliminación en lotes de hasta 10 000 claves por operación para no saturar Redis.
+
+Inserción de datos en Redis:
+
+Uso de pipeline para agrupar múltiples operaciones y mejorar el rendimiento.
+
+Conversión de valores NaN a cadenas vacías ("") para evitar incompatibilidades.
+
+Almacenamiento de cada registro como un hash en Redis con clave purchase:<índice>.
+
+Medición de tiempos:
+
+Tiempo por bloque.
+
+Tiempo total de inserción.
+
+Definición del problema (desde la perspectiva del laboratorio)
+La carga de un dataset de más de 2.6 millones de registros en Redis puede provocar:
+
+Saturación de CPU y memoria si se intenta insertar todo en una sola operación.
+
+Duplicación de datos si no se eliminan cargas anteriores.
+
+Latencia en inserción si no se optimiza la escritura.
+
+Resultados
+Conexión: Redis aceptó conexiones desde la VM sin errores.
+
+Borrado de datos previos: Eliminadas todas las claves antiguas purchase:* antes de la nueva carga.
+
+Inserción optimizada: Uso de pipeline y carga en bloques permitió procesar el dataset sin saturar la VM.
+
+Datos accesibles: Los registros son consultables con comandos como:
+
+bash
+Copy
+Edit
+redis-cli HGETALL purchase:0
+Tiempo total: Registrado al finalizar el proceso, junto con tiempos por bloque.
+
+Próximos pasos
+Repetir el procedimiento para HBase siguiendo la misma estrategia de:
+
+Limpieza previa.
+
+Inserción por bloques.
+
+Medición de tiempos.
+
+Comparar los tiempos de inserción y consulta entre MongoDB, Redis y HBase.
+
+---
+📄 Registro de Tarea — Carga del dataset en Redis
+Actividad: Inserción del dataset limpio en Redis en bloques de 100 000 registros utilizando pipeline para optimizar el rendimiento.
+Objetivo: Medir rendimiento y consumo de recursos durante la carga.
+
+⚙️ Configuración de prueba
+Dataset: 2 633 521 registros (kz.csv)
+
+Bloques de inserción: 100 000 registros por batch
+
+Redis: Contenedor Docker redis:latest
+
+VM: Standard_A4m_v2 — 8 vCPU, 32 GB RAM
+
+Script: Python con redis-py y pipeline(transaction=False)
+
+📊 Métricas de rendimiento (Azure Monitor)
+Periodo observado: durante toda la inserción del dataset.
+
+Métrica	Valor Promedio	Observaciones
+CPU (Percentage CPU)	~20 % (picos 65 %)	Incrementos durante los batches, con caídas entre lotes.
+Memoria disponible (Available Memory %)	~84 %	Uso moderado; Redis maneja los datos en memoria eficientemente.
+Data Disk IOPS Consumed %	Bajo	No hubo saturación de IOPS, Redis es predominantemente in-memory.
+Data Disk Latency	Casi nulo	Escritura muy rápida por ser en memoria; mínima espera en disco.
+Data Disk Read/Write Bytes/Sec	Lectura mínima / Escritura muy baja	No hubo dependencia fuerte de disco persistente.
+
+📝 Notas
+La carga en bloques evita saturar CPU y memoria.
+
+Redis respondió rápidamente debido a su naturaleza en memoria, con baja latencia.
+
+Redis se comporta mejor que MongoDB en términos de uso de CPU y disco para esta etapa, aunque la persistencia depende de snapshots y AOF si se habilitan.
+
+En cargas repetidas es clave eliminar previamente claves antiguas para evitar duplicados (DEL purchase:*).
+
+---
+
+📄 Registro de Tarea — Carga del dataset en MongoDB
+Actividad: Inserción del dataset limpio en MongoDB en bloques de 100 000 registros utilizando insert_many() para optimizar el rendimiento.
+Objetivo: Cargar el dataset completo midiendo tiempos por bloque y consumo de recursos.
+
+⚙️ Configuración de prueba
+Dataset: 2 633 521 registros (kz.csv)
+
+Bloques de inserción: 100 000 registros por batch (último bloque de 33 521)
+
+MongoDB: Contenedor Docker mongo:6.0 con autenticación admin / pass
+
+VM: Standard_A4m_v2 — 8 vCPU, 32 GB RAM
+
+Script: Python con pymongo, limpieza previa de la colección (drop()) para evitar duplicados
+
+📊 Tiempos de inserción
+Promedio por bloque: ~4.3 segundos
+Tiempo total: 114.76 segundos
+Total documentos insertados: 2 633 521
+
+Ejemplo de ejecución:
+
+yaml
+Copy
+Edit
+🧹 Colección limpiada antes de la inserción.
+✅ Bloque 1: 100000 registros (4.19 seg)
+✅ Bloque 2: 100000 registros (4.67 seg)
+...
+✅ Bloque 26: 100000 registros (4.36 seg)
+✅ Bloque 27: 33521 registros (1.56 seg)
+⏱ Tiempo total: 114.76 seg
+📊 Total documentos insertados: 2633521
+📊 Métricas de rendimiento (Azure Monitor)
+Periodo observado: durante la inserción del dataset.
+
+Métrica	Valor Promedio	Observaciones
+CPU (Percentage CPU)	~20–25 % (picos >50 %)	Actividad constante durante cada batch.
+Memoria disponible (Available Memory %)	~80–82 %	MongoDB usa memoria para cache/buffers, estable en la prueba.
+Data Disk IOPS Consumed %	Moderado	Picos coinciden con inserciones en disco.
+Data Disk Latency	Baja	MongoDB maneja escritura rápida con journaling activo.
+Data Disk Read/Write Bytes/Sec	Escrituras constantes	La escritura crece proporcional al tamaño del batch insertado.
+
+📝 Notas
+MongoDB consume más I/O que Redis en la carga inicial debido a la persistencia inmediata en disco.
+
+La carga por lotes de 100 000 evita saturación y mantiene uso estable de CPU y memoria.
+
+Es fundamental limpiar la colección antes de una nueva inserción para evitar duplicados (drop()).
+
+---
+
+📄 Registro de Tarea — Carga del dataset en Redis
+Actividad: Inserción del dataset limpio en Redis en bloques de 100 000 registros utilizando pipeline.hset() para maximizar el rendimiento.
+Objetivo: Cargar el dataset completo en Redis, midiendo tiempos por bloque y monitoreando el consumo de recursos de la VM.
+
+⚙️ Configuración de prueba
+Dataset: 2 633 521 registros (kz.csv)
+
+Bloques de inserción: 100 000 registros por batch (último bloque de 33 521)
+
+Redis: Contenedor Docker redis:7
+
+VM: Standard_A4m_v2 — 8 vCPU, 32 GB RAM
+
+Script: Python con redis-py, limpieza previa de claves (r.keys("purchase:*")) para evitar duplicados.
+
+📊 Tiempos de inserción
+Promedio por bloque: ~40.5 segundos
+Tiempo total: 1 065.80 segundos (~17.8 min)
+Total documentos insertados: 2 633 521
+
+Ejemplo de ejecución:
+
+yaml
+Copy
+Edit
+✅ Conectado a Redis
+📦 Total de registros en dataset: 2,633,521
+🧹 Eliminadas 1,200,000 claves antiguas en Redis
+✅ Bloque 1: 100,000 registros en 41.48 seg
+...
+✅ Bloque 26: 100,000 registros en 40.33 seg
+✅ Bloque 27: 33,521 registros en 13.37 seg
+🏁 Inserción total completada en 1065.80 segundos
+📊 Métricas de rendimiento (Azure Monitor)
+Periodo observado: durante la inserción del dataset.
+
+Métrica	Valor Promedio	Observaciones
+CPU (Percentage CPU)	~20–35 % (picos cercanos a 60 %)	Picos al inicio de cada bloque.
+Memoria disponible (Available Memory %)	~80–84 %	Redis almacena todo en memoria, estable durante la carga.
+Data Disk IOPS Consumed %	Bajo	Redis es in-memory, poca escritura directa a disco.
+Data Disk Latency	Muy baja	Sin impacto notable en el rendimiento.
+Data Disk Write Bytes/Sec	Bajo	Ligero aumento por persistencia de snapshots (RDB).
+
+📝 Notas
+Redis es significativamente más lento que MongoDB en esta carga debido a la inserción de hashes individuales para cada registro.
+
+El uso de pipeline redujo la latencia de red, pero la operación sigue siendo CPU-bound y single-threaded en el proceso de escritura.
+
+Eliminar las claves antiguas antes de la inserción es esencial para evitar duplicados y consumo excesivo de memoria.
+
+Si se prioriza la velocidad sobre la persistencia, se podría desactivar temporalmente el guardado RDB/AOF durante la carga.
+
+---
+
+Registro de Tarea — Carga del Dataset en HBase
+Objetivo: Insertar el dataset limpio de compras electrónicas en HBase utilizando inserción por bloques para evitar saturación de recursos.
+
+Acciones Ejecutadas
+Conexión a HBase mediante happybase (Thrift en puerto 9090).
+
+Creación de la tabla purchases con familia de columnas cf si no existía.
+
+Limpieza previa de la tabla (eliminación de registros antiguos) para evitar duplicados.
+
+Carga del dataset kz.csv (2 633 521 registros) usando bloques de 100 000 registros.
+
+Inserción optimizada utilizando batch() para reducir overhead de conexión.
+
+Ejecución
+yaml
+Copy
+Edit
+✅ Conectado a HBase
+🆕 Tabla creada: purchases
+🧹 Limpiando registros antiguos de la tabla...
+🧹 Tabla vacía.
+
+📦 Total de registros en dataset: 2,633,521
+✅ Bloque 1: 100,000 registros en 50.46 segundos
+✅ Bloque 2: 100,000 registros en 45.50 segundos
+✅ Bloque 3: 100,000 registros en 45.49 segundos
+✅ Bloque 4: 100,000 registros en 46.09 segundos
+✅ Bloque 5: 100,000 registros en 46.36 segundos
+✅ Bloque 6: 100,000 registros en 46.98 segundos
+✅ Bloque 7: 100,000 registros en 47.41 segundos
+✅ Bloque 8: 100,000 registros en 46.85 segundos
+✅ Bloque 9: 100,000 registros en 46.06 segundos
+✅ Bloque 10: 100,000 registros en 45.91 segundos
+✅ Bloque 11: 100,000 registros en 46.08 segundos
+✅ Bloque 12: 100,000 registros en 45.59 segundos
+✅ Bloque 13: 100,000 registros en 47.15 segundos
+✅ Bloque 14: 100,000 registros en 45.59 segundos
+✅ Bloque 15: 100,000 registros en 45.02 segundos
+✅ Bloque 16: 100,000 registros en 47.15 segundos
+✅ Bloque 17: 100,000 registros en 47.44 segundos
+✅ Bloque 18: 100,000 registros en 49.85 segundos
+✅ Bloque 19: 100,000 registros en 47.66 segundos
+✅ Bloque 20: 100,000 registros en 46.70 segundos
+✅ Bloque 21: 100,000 registros en 45.63 segundos
+✅ Bloque 22: 100,000 registros en 46.35 segundos
+✅ Bloque 23: 100,000 registros en 46.87 segundos
+✅ Bloque 24: 100,000 registros en 45.44 segundos
+✅ Bloque 25: 100,000 registros en 46.87 segundos
+✅ Bloque 26: 100,000 registros en 45.85 segundos
+✅ Bloque 27: 33,521 registros en 15.18 segundos
+
+🏁 Inserción total completada en 1227.67 segundos
+Observaciones de Rendimiento
+Inserción estable en la mayoría de bloques (~45–47 segundos/bloque).
+
+Bloques iniciales ligeramente más lentos por la creación y preparación de la tabla.
+
+Uso de batch() en HappyBase ayudó a mantener la latencia de escritura constante.
+
+El rendimiento general fue más lento que en MongoDB y Redis, consistente con el diseño de HBase orientado a escritura masiva distribuida.
+
+---
+
