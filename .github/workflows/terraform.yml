@@ -1,34 +1,49 @@
-name: Terraform Deploy
+name: 'Terraform CI/CD'
 
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  ARM_ACCESS_KEY: ${{ secrets.ARM_ACCESS_KEY }}
+  TF_VAR_tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+  TF_VAR_xdc-c360-github-actions_obj_id: ${{ secrets.AZURE_CLIENT_ID }}
 
 jobs:
   terraform:
-    name: Terraform Plan & Apply
     runs-on: ubuntu-latest
 
     steps:
       - name: 📥 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🔐 Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: ⚙️ Setup Terraform
+      - name: ⚙️ Set up Terraform
         uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.6.6
 
       - name: 📦 Terraform Init
         run: terraform -chdir=terraform init
 
+      - name: 🎨 Terraform Format Check
+        run: terraform -chdir=terraform fmt -check
+
+      - name: 🔎 Terraform Validate
+        run: terraform -chdir=terraform validate
+
       - name: 📝 Terraform Plan
-        run: terraform -chdir=terraform plan
+        run: terraform -chdir=terraform plan -input=false
 
       - name: 🚀 Terraform Apply
-        run: terraform -chdir=terraform apply -auto-approve
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform -chdir=terraform apply -auto-approve -input=false
