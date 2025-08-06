@@ -53,9 +53,20 @@ docker run -d \
   --restart unless-stopped \
   harisekhon/hbase:latest
 
-# Jupyter Notebook con tmux
+# ================================
+# 🚀 Levantar Jupyter Notebook en tmux
+# ================================
+echo "📓 Iniciando Jupyter Notebook en tmux..."
+
+# Asegurar que no hay sesiones antiguas
 tmux kill-session -t jupyterlab 2>/dev/null || true
-tmux new-session -d -s jupyterlab \
-  "jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser"
+
+# Crear nueva sesión tmux y lanzar Jupyter
+tmux new -d -s jupyterlab "jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser"
+
+echo "✅ Jupyter Notebook iniciado en tmux (sesión: jupyterlab)"
+echo "   URL: http://$(curl -s ifconfig.me):8888"
+echo "   Contraseña: pass"
+
 
 echo "✅ Todos los servicios están arriba."

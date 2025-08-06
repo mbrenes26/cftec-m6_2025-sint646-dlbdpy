@@ -1040,3 +1040,21 @@ Configurar conexiones Python a MongoDB, Redis y HBase en dicho notebook.
 Implementar carga del dataset y consultas solicitadas.
 
 Comparar tiempos y documentar resultados.
+
+---
+las URLs de acceso quedarían así:
+
+Servicio	Puerto	URL de acceso
+Mongo Express	8081	http://4.155.211.247:8081
+RedisInsight	8001	http://4.155.211.247:8001
+HBase Master UI	16010	http://4.155.211.247:16010
+HBase RegionServer UI	16030	http://4.155.211.247:16030
+Jupyter Notebook	8888	http://4.155.211.247:8888
+
+⚠️ Credenciales
+
+Mongo Express → Usuario: admin / Clave: pass
+
+RedisInsight → Sin clave inicial (se configura al entrar)
+
+Jupyter Notebook → Clave: pass
