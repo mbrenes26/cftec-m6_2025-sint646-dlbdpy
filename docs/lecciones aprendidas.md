@@ -703,3 +703,232 @@ Documentar el despliegue de herramientas gráficas para Redis y validar conectiv
 
 Consolidar documentación para entrega final del laboratorio.
 
+Registro de tarea — Implementación de RedisInsight en contenedor Docker
+Objetivo
+Implementar la interfaz gráfica RedisInsight en un contenedor Docker dentro de la VM vm-cftec-m62025-SINT646-lab01, para administrar y monitorear la base de datos Redis desplegada previamente.
+
+Procedimiento
+1. Preparación
+Verificar que Redis está corriendo en el contenedor redis en el puerto 6379.
+
+Confirmar que el puerto 8001 está abierto en el NSG para la IP del cliente:
+
+bash
+Copy
+Edit
+terraform -chdir=terraform state show azurerm_network_security_group.lab_nsg | grep -A5 8001
+2. Primer intento con imagen latest
+bash
+Copy
+Edit
+docker run -d \
+  --name redisinsight \
+  -p 8001:8001 \
+  --restart unless-stopped \
+  redislabs/redisinsight:latest
+Problema encontrado:
+
+El contenedor quedaba detenido en:
+
+sql
+Copy
+Edit
+Running docker-entry.sh
+El puerto 8001 aparecía abierto, pero al acceder devolvía:
+
+nginx
+Copy
+Edit
+ERR_CONNECTION_REFUSED
+curl http://localhost:8001 devolvía Connection reset by peer.
+
+Logs sin información adicional después del arranque.
+
+3. Diagnóstico
+Confirmado que no era un problema de firewall/NSG (regla ya habilitada).
+
+Revisado que el contenedor corría (docker ps) pero sin inicializar la UI.
+
+Conclusión: bug en la imagen latest.
+
+4. Solución aplicada
+Ejecutar RedisInsight con versión estable 1.14.0:
+
+bash
+Copy
+Edit
+docker run -d \
+  --name redisinsight \
+  -p 8001:8001 \
+  --restart unless-stopped \
+  redislabs/redisinsight:1.14.0
+Esta versión inicializó correctamente y mostró la UI.
+
+5. Validación de acceso
+Acceso exitoso desde el navegador:
+
+cpp
+Copy
+Edit
+http://4.155.211.247:8001
+Pantalla inicial solicitando conectar una base de datos Redis.
+
+Verificación de logs:
+
+bash
+Copy
+Edit
+docker logs redisinsight
+Mostró inicio correcto del servicio.
+
+Resultado
+RedisInsight desplegado correctamente.
+
+Interfaz disponible en http://4.155.211.247:8001.
+
+Lista para configurar conexión al contenedor redis local.
+
+Notas
+Para producción, considerar versión 2.x de RedisInsight (requiere ajustes de imagen y compatibilidad).
+
+Mantener el puerto 8001 abierto solo para IP autorizada por seguridad.
+
+RedisInsight 1.x está en End of Life, pero se mantiene en este laboratorio por simplicidad y estabilidad.
+
+Registro de tarea — Implementación de HBase en contenedor Docker
+Objetivo
+Implementar Apache HBase en contenedor Docker con sus puertos de administración accesibles vía web, permitiendo monitorear el estado de Master y RegionServer.
+
+Procedimiento
+1. Preparación
+Verificar que Docker esté instalado y corriendo.
+
+Abrir puertos 16010 (Master UI) y 16030 (RegionServer UI) en el NSG para la IP autorizada 190.108.74.42.
+
+2. Implementación
+bash
+Copy
+Edit
+docker pull harisekhon/hbase:latest
+docker volume create hbase_data
+
+docker run -d \
+  --name hbase \
+  -p 16000:16000 \
+  -p 16010:16010 \
+  -p 16020:16020 \
+  -p 16030:16030 \
+  -p 2181:2181 \
+  -v hbase_data:/hbase-data \
+  harisekhon/hbase
+3. Validación
+Master UI: http://4.155.211.247:16010
+
+RegionServer UI: http://4.155.211.247:16030
+
+Logs:
+
+bash
+Copy
+Edit
+docker logs hbase --tail 20
+Mostraron inicio exitoso y disponibilidad de servicios.
+
+Resultado
+HBase funcionando y accesible vía web.
+
+Puertos seguros, expuestos solo a IP autorizada.
+
+Preparado para pruebas de integración con otras BD del laboratorio.
+
+Registro de tarea — Implementación de Mongo Express en contenedor Docker
+Objetivo
+Implementar Mongo Express como interfaz web para administrar la base de datos MongoDB ya desplegada en contenedor Docker.
+
+Procedimiento
+1. Preparación
+Confirmar que MongoDB está en ejecución (docker ps).
+
+Abrir puerto 8081 en el NSG para la IP 190.108.74.42.
+
+2. Implementación
+bash
+Copy
+Edit
+docker run -d \
+  --name mongo-express \
+  -p 8081:8081 \
+  -e ME_CONFIG_MONGODB_ADMINUSERNAME=admin \
+  -e ME_CONFIG_MONGODB_ADMINPASSWORD=admin123 \
+  -e ME_CONFIG_MONGODB_SERVER=mongodb \
+  --link mongodb:mongodb \
+  mongo-express:latest
+Nota: En laboratorio se usó admin / pass para simplificar autenticación.
+
+3. Validación
+Acceso web: http://4.155.211.247:8081
+
+Visualización de bases de datos: admin, config, local.
+
+Logs:
+
+bash
+Copy
+Edit
+docker logs mongo-express --tail 20
+Mostraron conexión establecida a MongoDB.
+
+Resultado
+Interfaz web funcional para gestión de MongoDB.
+
+Puertos y acceso restringidos a IP autorizada.
+
+Configuración válida para fines de laboratorio.
+
+Registro de tarea — Implementación de RedisInsight en contenedor Docker
+Objetivo
+Implementar RedisInsight para administración gráfica de Redis en contenedor Docker, facilitando visualización y configuración.
+
+Procedimiento
+1. Preparación
+Confirmar Redis en ejecución (docker ps).
+
+Abrir puerto 8001 en el NSG para la IP 190.108.74.42.
+
+2. Problemas detectados
+Imagen latest de RedisInsight no inicializaba correctamente.
+
+Logs mostraban:
+
+sql
+Copy
+Edit
+Running docker-entry.sh
+y no continuaba.
+
+curl http://localhost:8001 devolvía Connection reset by peer.
+
+3. Solución aplicada
+Usar versión estable 1.14.0:
+
+bash
+Copy
+Edit
+docker run -d \
+  --name redisinsight \
+  -p 8001:8001 \
+  --restart unless-stopped \
+  redislabs/redisinsight:1.14.0
+4. Validación
+Acceso exitoso: http://4.155.211.247:8001
+
+Pantalla inicial solicitando conexión a Redis existente.
+
+Logs mostraron inicio correcto.
+
+Resultado
+RedisInsight desplegado y accesible vía web.
+
+Configuración válida para entornos de laboratorio.
+
+Puerto expuesto solo a IP autorizada.
