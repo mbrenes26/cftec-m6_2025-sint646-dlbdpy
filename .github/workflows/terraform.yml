@@ -1,12 +1,27 @@
 name: 'Terraform CI/CD'
 
+# 🛡️ Modo protegido por defecto: solo ejecución manual
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Escribe "yes" para confirmar la ejecución de Terraform'
+        required: true
+        default: 'no'
+
+# 🚧 Comentado: activación automática por push/pull_request (para reactivar si se desea)
+# on:
+#   push:
+#     branches:
+#       - main
+#   pull_request:
+#     branches:
+#       - main
+
+# 🧠 Cómo reactivarlo en modo automático cuando lo necesites:
+# Elimina el bloque workflow_dispatch
+# Descomenta el bloque push / pull_request
+# Elimina la validación de github.event.inputs.confirm si deseas ejecución automática sin confirmación
 
 permissions:
   id-token: write
@@ -22,10 +37,11 @@ env:
   TF_VAR_xdc-c360-github-actions_obj_id: ${{ secrets.AZURE_CLIENT_ID }}
   TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
 
-
 jobs:
   terraform:
+    if: github.ref == 'refs/heads/main' && github.event.inputs.confirm == 'yes'
     runs-on: ubuntu-latest
+    environment: production  # Requiere aprobación manual si configurado en GitHub > Environments
 
     steps:
       - name: 📥 Checkout repository
@@ -47,5 +63,4 @@ jobs:
         run: terraform -chdir=terraform plan -input=false
 
       - name: 🚀 Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         run: terraform -chdir=terraform apply -auto-approve -input=false
