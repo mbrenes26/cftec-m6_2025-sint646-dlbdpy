@@ -1,0 +1,34 @@
+name: Terraform Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    name: Terraform Plan & Apply
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: ⚙️ Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+
+      - name: 📦 Terraform Init
+        run: terraform -chdir=terraform init
+
+      - name: 📝 Terraform Plan
+        run: terraform -chdir=terraform plan
+
+      - name: 🚀 Terraform Apply
+        run: terraform -chdir=terraform apply -auto-approve
