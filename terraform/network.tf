@@ -114,3 +114,15 @@ resource "azurerm_subnet_network_security_group_association" "lab_subnet_nsg" {
   subnet_id                 = azurerm_subnet.lab_subnet.id
   network_security_group_id = azurerm_network_security_group.lab_nsg.id
 }
+# Mongo Express UI - Solo tu IP
+security_rule {
+  name                       = "Allow-MongoExpress-MyIP"
+  priority                   = 140
+  direction                  = "Inbound"
+  access                     = "Allow"
+  protocol                   = "Tcp"
+  source_port_range          = "*"
+  destination_port_range     = "8081"
+  source_address_prefix      = "190.108.74.42/32"
+  destination_address_prefix = "*"
+}
