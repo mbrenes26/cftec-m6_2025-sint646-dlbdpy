@@ -1,0 +1,46 @@
+# =========================
+# Terraform
+# =========================
+.terraform/
+*.tfstate
+*.tfstate.*
+*.log
+*.tfplan
+
+# =========================
+# Credenciales y certificados
+# =========================
+*.pem
+*.pfx
+*.cer
+*.key
+*.crt
+
+# =========================
+# Archivos temporales del sistema
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Residuos de editores
+# =========================
+*~
+*.swp
+
+# =========================
+# Ejecutables y binarios
+# =========================
+*.exe
+*.dll
+*.msi
+*.bat
+*.cmd
+
+# =========================
+# Archivos comprimidos / empaquetados
+# =========================
+*.zip
+*.tar
+*.gz
+*.7z
