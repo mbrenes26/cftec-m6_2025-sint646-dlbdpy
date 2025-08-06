@@ -120,6 +120,19 @@ resource "azurerm_network_security_group" "lab_nsg" {
     source_address_prefix      = "190.108.74.42/32"
     destination_address_prefix = "*"
   }
+  # RedisInsight UI - Solo tu IP
+  security_rule {
+    name                       = "Allow-RedisInsight-MyIP"
+    priority                   = 150
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "8001"
+    source_address_prefix      = "190.108.74.42/32"
+    destination_address_prefix = "*"
+  }
+
 }
 
 # Asociación del NSG a la Subnet

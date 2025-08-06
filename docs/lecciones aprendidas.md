@@ -605,3 +605,101 @@ Puertos expuestos
 
 Resultado
 ✅ HBase desplegado y operativo en la VM, con acceso local y remoto a sus puertos y persistencia de datos en el volumen hbase_data.
+
+📄 Registro de tarea — Implementación de MongoDB y Mongo Express en contenedores Docker
+Fecha: 06/agosto/2025
+Responsable: Mario Brenes
+
+Objetivo
+Desplegar MongoDB y Mongo Express en la VM del laboratorio, utilizando contenedores Docker, para disponer de una base de datos NoSQL y su interfaz web de administración, accesible desde la red pública del laboratorio.
+
+Actividades realizadas
+Verificación de Docker en la VM
+
+Confirmado que Docker está instalado y operativo (docker --version).
+
+Verificado que el usuario azureuser pertenece al grupo docker para ejecutar sin sudo.
+
+Despliegue de MongoDB
+
+Creado volumen persistente:
+
+bash
+Copy
+Edit
+docker volume create mongo_data
+Contenedor MongoDB:
+
+bash
+Copy
+Edit
+docker run -d \
+  --name mongodb \
+  -p 27017:27017 \
+  -v mongo_data:/data/db \
+  -e MONGO_INITDB_ROOT_USERNAME=admin \
+  -e MONGO_INITDB_ROOT_PASSWORD=admin123 \
+  mongo:latest
+Verificado acceso local con:
+
+bash
+Copy
+Edit
+docker exec -it mongodb mongosh -u admin -p admin123 --authenticationDatabase admin
+Despliegue de Mongo Express
+
+Inicialmente intentado con --link mongodb:mongo, pero fallaba la resolución de hostname en Docker moderno.
+
+Confirmado que Mongo Express se ejecuta correctamente y expone el puerto 8081.
+
+Se mantuvo la autenticación web por defecto de laboratorio (admin / pass).
+
+Comando final utilizado:
+
+bash
+Copy
+Edit
+docker run -d \
+  --name mongo-express \
+  -p 8081:8081 \
+  -e ME_CONFIG_MONGODB_ADMINUSERNAME=admin \
+  -e ME_CONFIG_MONGODB_ADMINPASSWORD=admin123 \
+  -e ME_CONFIG_MONGODB_SERVER=mongodb \
+  mongo-express:latest
+Apertura de puerto en NSG
+
+Modificado network.tf para agregar regla NSG que permita acceso HTTP en puerto 8081 solo desde mi IP pública.
+
+Aplicado cambio con terraform apply.
+
+Verificación de acceso
+
+Acceso exitoso a la interfaz web de Mongo Express desde:
+
+cpp
+Copy
+Edit
+http://4.155.211.247:8081
+Autenticación web:
+
+makefile
+Copy
+Edit
+Usuario: admin
+Contraseña: pass
+Confirmado listado de bases de datos admin, config y local.
+
+Resultados
+MongoDB operativo y accesible en la VM del laboratorio.
+
+Mongo Express funcional como herramienta gráfica para administración de MongoDB.
+
+Acceso restringido mediante NSG para mejorar seguridad en el laboratorio.
+
+Próximos pasos
+Implementar RedisInsight para Redis con interfaz web en puerto 8001.
+
+Documentar el despliegue de herramientas gráficas para Redis y validar conectividad.
+
+Consolidar documentación para entrega final del laboratorio.
+
