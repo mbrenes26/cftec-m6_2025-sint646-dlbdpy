@@ -47,3 +47,16 @@ Thumbs.db
 *.tar
 *.gz
 *.7z
+
+# =========================
+# Datasets y resultados experimentales
+# =========================
+datasets/
+*.csv
+*.tsv
+
+# =========================
+# Archivos de Jupyter Notebook
+# =========================
+.ipynb_checkpoints/
+*.ipynb_save

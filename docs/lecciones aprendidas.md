@@ -932,3 +932,111 @@ RedisInsight desplegado y accesible vía web.
 Configuración válida para entornos de laboratorio.
 
 Puerto expuesto solo a IP autorizada.
+
+Registro de tarea — Configuración de Jupyter Notebook en VM para Laboratorio 1
+Objetivo
+Preparar un entorno Jupyter Notebook accesible vía navegador, protegido por contraseña, para desarrollar el Laboratorio 1 de la asignatura SINT646 — Deep Learning y Big Data con Python. El notebook servirá para trabajar con MongoDB, Redis y HBase en contenedores Docker y realizar las pruebas solicitadas.
+
+Acciones ejecutadas
+Instalación de dependencias base
+
+Actualización de paquetes en la VM.
+
+Instalación de python3, python3-pip y compiladores necesarios para librerías Python.
+
+Instalación de librerías requeridas para el laboratorio:
+
+bash
+Copy
+Edit
+pip3 install pymongo redis happybase thriftpy2 pandas
+Instalación de Jupyter Notebook
+
+Instalación de notebook<7 para evitar problemas de compatibilidad con Python 3.8.
+
+Ajuste de versiones de jinja2 y markupsafe para corregir error de importación.
+
+Instalación en el entorno de usuario (--user) para evitar conflictos con paquetes del sistema.
+
+Configuración de Jupyter Notebook
+
+Generación de archivo de configuración:
+
+bash
+Copy
+Edit
+jupyter notebook --generate-config
+Edición del archivo ~/.jupyter/jupyter_notebook_config.py para:
+
+Escuchar en todas las interfaces (0.0.0.0).
+
+Definir puerto fijo 8888.
+
+Deshabilitar token y usar contraseña hash.
+
+Deshabilitar apertura automática de navegador en el servidor.
+
+Generación de hash para contraseña simple pass:
+
+bash
+Copy
+Edit
+from notebook.auth import passwd
+passwd()
+Hash aplicado:
+
+perl
+Copy
+Edit
+argon2:$argon2id$v=19$m=10240,t=10,p=8$BcymMp8qCSRjbB29A7lACQ$xDsP/i38TtfPfRh6raE2z1QSRpDN7ZsiDKAzFyDc5Ik
+Ejecución persistente con tmux
+
+Instalación y verificación de tmux.
+
+Creación de sesión persistente:
+
+bash
+Copy
+Edit
+tmux new -s jupyterlab
+Ejecución de Jupyter dentro de tmux:
+
+bash
+Copy
+Edit
+jupyter notebook
+Desacople de sesión (Ctrl+B luego D) para mantener el servicio activo tras cerrar SSH.
+
+Acceso desde el navegador
+
+Acceso vía:
+
+cpp
+Copy
+Edit
+http://4.155.211.247:8888
+Login con contraseña simple: pass.
+
+Confirmación de funcionamiento correcto y acceso a interfaz vacía lista para cargar notebooks.
+
+Problemas enfrentados y soluciones
+Error de importación soft_unicode en MarkupSafe
+🔹 Solución: fijar versión compatible de jinja2==3.0.3 y markupsafe==2.0.1.
+
+Versión de Notebook 7 no compatible con Python 3.8
+🔹 Solución: instalar notebook<7.
+
+Pérdida del token al ejecutar en SSH
+🔹 Solución: configuración sin token y con contraseña hash.
+
+Riesgo de detener Jupyter al cerrar SSH
+🔹 Solución: uso de tmux para mantener la sesión persistente.
+
+Próximos pasos
+Crear el notebook base para Laboratorio 1.
+
+Configurar conexiones Python a MongoDB, Redis y HBase en dicho notebook.
+
+Implementar carga del dataset y consultas solicitadas.
+
+Comparar tiempos y documentar resultados.

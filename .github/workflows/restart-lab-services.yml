@@ -1,0 +1,37 @@
+name: Restart Lab Services
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
+jobs:
+  restart-services:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔐 Azure CLI Login
+        run: |
+          az login --service-principal \
+            --username $ARM_CLIENT_ID \
+            --password $ARM_CLIENT_SECRET \
+            --tenant $ARM_TENANT_ID
+          az account set --subscription $ARM_SUBSCRIPTION_ID
+
+      - name: 🚀 Restart Docker containers & Jupyter
+        run: |
+          az vm run-command invoke \
+            --command-id RunShellScript \
+            --name vm-cftec-m62025-SINT646-lab01 \
+            --resource-group <RG_NAME> \
+            --scripts @"scripts/restart_lab_services.sh"

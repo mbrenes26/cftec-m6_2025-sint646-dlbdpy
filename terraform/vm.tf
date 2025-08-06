@@ -2,7 +2,7 @@ resource "azurerm_linux_virtual_machine" "lab_vm" {
   name                = "vm-cftec-m62025-SINT646-lab01"
   resource_group_name = azurerm_resource_group.lab.name
   location            = var.location
-  size                = "Standard_B2s"
+  size                = "Standard_D8s_v3"
   admin_username      = "azureuser"
   network_interface_ids = [
     azurerm_network_interface.lab_nic.id
