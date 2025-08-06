@@ -192,7 +192,7 @@ Este laboratorio está documentado y versionado en el siguiente repositorio de G
 
 ---
 
-## Conclusión
+## Nota final acerca de la Arquitectura
 
 La arquitectura del laboratorio busca balancear simplicidad, aislamiento y reproducibilidad. Al contener los servicios en una sola VM con contenedores separados, se facilita el manejo de recursos, reinicio controlado de servicios, y análisis comparativo justo, ya que todas las bases de datos se ejecutan bajo condiciones similares.
 
@@ -201,89 +201,88 @@ La arquitectura del laboratorio busca balancear simplicidad, aislamiento y repro
 # Registro de Tareas y Bitácora Técnica
 
 
-Registro de tarea exitosa — Conexión SSH a la VM en Azure
-Objetivo
-Conectarse por SSH a la máquina virtual vm-cftec-m62025-SINT646-lab01 creada con Terraform, validando:
+### Registro de tarea exitosa — Conexión SSH a la VM en Azure
+#### Objetivo
 
-Configuración correcta de NSG (puerto 22 abierto).
+- Conectarse por SSH a la máquina virtual vm-cftec-m62025-SINT646-lab01 creada con Terraform, validando:
 
-Clave pública SSH correctamente configurada.
+- Configuración correcta de NSG (puerto 22 abierto).
 
-VM operativa y accesible desde internet.
+- Clave pública SSH correctamente configurada.
 
-Pasos ejecutados
-Confirmación de IP pública
+- VM operativa y accesible desde internet.
+
+#### Pasos ejecutados
+
+**Confirmación de IP pública**
 
 Desde Azure Portal, en el recurso pip-cftec-m62025-SINT646-lab01, se verificó que la IP pública asignada es:
 
-Copy
-Edit
+```
 4.155.211.247
-Verificación de reglas de seguridad
+```
+
+**Verificación de reglas de seguridad**
 
 Se comprobó que el Network Security Group (NSG) asociado a la Subnet incluye la regla:
 
-makefile
-Copy
-Edit
+```
 Name: Allow-SSH
 Direction: Inbound
 Protocol: TCP
 Port: 22
 Action: Allow
 Source: Any
+```
 Esto asegura que el puerto 22 está abierto para conexiones SSH desde cualquier origen (configuración de laboratorio).
 
-Ejecución del comando SSH
+**Ejecución del comando SSH**
 
 Desde la máquina local (Windows con Git Bash), se ejecutó:
 
-bash
-Copy
-Edit
+```bash
+
 ssh -i ~/.ssh/id_rsa azureuser@4.155.211.247
+```
 Donde:
 
--i ~/.ssh/id_rsa → ruta de la clave privada correspondiente a la clave pública configurada en Terraform.
+- -i ~/.ssh/id_rsa → ruta de la clave privada correspondiente a la clave pública configurada en Terraform.
 
-azureuser → usuario administrador definido en la VM.
+- azureuser → usuario administrador definido en la VM.
 
-4.155.211.247 → IP pública de la VM.
+- 4.155.211.247 → IP pública de la VM.
 
-Aceptación de huella digital
+- Aceptación de huella digital
 
 Como era la primera conexión, el sistema mostró:
 
-nginx
-Copy
-Edit
+```
 The authenticity of host '4.155.211.247' can't be established...
+```
+
 Se respondió:
 
-bash
-Copy
-Edit
+```
 yes
+```
 El sistema agregó la huella a la lista de known hosts.
 
 Ingreso de passphrase de la clave privada
 
 Al haberse configurado la clave privada con passphrase, el cliente SSH solicitó:
 
-swift
-Copy
-Edit
+```
 Enter passphrase for key '/c/Users/mario.brenes/.ssh/id_rsa':
+```
 Se ingresó la passphrase correcta.
 
-Acceso exitoso a la VM
+- Acceso exitoso a la VM
 
 La sesión SSH se estableció mostrando:
 
-css
-Copy
-Edit
+```
 Welcome to Ubuntu 20.04.6 LTS (GNU/Linux 5.15.0-1089-azure x86_64)
+```
 Información del sistema:
 
 OS: Ubuntu 20.04.6 LTS
@@ -296,40 +295,33 @@ Estado: sin actualizaciones críticas pendientes (0 updates inmediatas).
 
 Aviso de reinicio requerido por cambios en el sistema:
 
-pgsql
-Copy
-Edit
+```
 *** System restart required ***
-Resultado
-✅ Conexión SSH establecida con éxito.
+```
+Resultado: ✅ Conexión SSH establecida con éxito.
+
 La VM es accesible remotamente desde internet y está lista para configuración adicional (instalación de Docker y otros servicios).
 
-Registro de tarea — Verificación y actualización del sistema operativo
-Objetivo
+### Registro de tarea — Verificación y actualización del sistema operativo
+#### Objetivo
+
 Verificar y actualizar el sistema operativo Ubuntu 20.04.6 LTS de la VM vm-cftec-m62025-SINT646-lab01 para garantizar que se encuentra al día antes de instalar Docker y otros servicios.
 
-Pasos ejecutados
-Conexión a la VM por SSH
-
-Desde la máquina local:
-
-bash
-Copy
-Edit
+#### Pasos ejecutados
+- Conexión a la VM por SSH
+```
 ssh -i ~/.ssh/id_rsa azureuser@4.155.211.247
+```
 Actualización de listas de paquetes
 
 Comando:
 
-bash
-Copy
-Edit
+```
 sudo apt update
+```
 Resultado:
 
-perl
-Copy
-Edit
+```
 Hit:1 http://azure.archive.ubuntu.com/ubuntu focal InRelease
 Hit:2 http://azure.archive.ubuntu.com/ubuntu focal-updates InRelease
 Hit:3 http://azure.archive.ubuntu.com/ubuntu focal-backports InRelease
@@ -338,6 +330,7 @@ Reading package lists... Done
 Building dependency tree       
 Reading state information... Done
 All packages are up to date.
+```
 Interpretación:
 
 Todas las listas de paquetes están actualizadas.
@@ -346,153 +339,131 @@ No hay actualizaciones pendientes en los repositorios estándar de Ubuntu.
 
 Actualización de paquetes instalados
 
-Comando:
-
-bash
-Copy
-Edit
+```
 sudo apt upgrade -y
+```
 Resultado:
 
-javascript
-Copy
-Edit
+```
 Calculating upgrade... Done
 The following security updates require Ubuntu Pro with 'esm-infra' enabled:
   <lista de paquetes ESM>
 0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.
+```
 Interpretación:
 
 No hay actualizaciones disponibles en los repositorios estándar.
 
 Algunos paquetes con soporte extendido (ESM) requieren Ubuntu Pro para recibir parches de seguridad.
 
-Conclusión
+#### Conclusión
 
 No fue necesario ejecutar:
 
-bash
-Copy
-Edit
+```
 sudo apt autoremove -y
 sudo reboot
+```
 El sistema ya estaba en el estado más reciente posible sin habilitar Ubuntu Pro.
 
 Resultado
 ✅ El sistema está actualizado y no presenta paquetes pendientes de actualización en los repositorios estándar de Ubuntu 20.04.
 
-Registro de tarea — Instalación y configuración de Docker en la VM
-Objetivo
+### Registro de tarea — Instalación y configuración de Docker en la VM
+#### Objetivo
 Instalar y habilitar Docker Engine en la VM vm-cftec-m62025-SINT646-lab01 para permitir la ejecución de contenedores necesarios en el laboratorio.
 
 Pasos ejecutados
 Conexión a la VM por SSH
-
-bash
-Copy
-Edit
+```
 ssh -i ~/.ssh/id_rsa azureuser@4.155.211.247
+```
 Instalación de Docker
 
 Comando:
-
-bash
-Copy
-Edit
+```
 sudo apt install -y docker.io
+```
 Resultado:
 
-pgsql
-Copy
-Edit
+```
 docker.io is already the newest version (26.1.3-0ubuntu1~20.04.1).
 0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.
+```
 Interpretación:
 
 Docker ya estaba instalado en la última versión disponible.
 
 Habilitar el servicio Docker para que arranque automáticamente
-
-bash
-Copy
-Edit
+```
 sudo systemctl enable docker
+```
 Resultado:
 
-nginx
-Copy
-Edit
+```
 docker
+```
 Iniciar el servicio Docker
 
-bash
-Copy
-Edit
+```
 sudo systemctl start docker
+```
 Verificar versión de Docker instalada
 
-bash
-Copy
-Edit
+```
 docker --version
+```
 Resultado:
 
-nginx
-Copy
-Edit
+```
 Docker version 26.1.3, build 26.1.3-0ubuntu1~20.04.1
+```
 Agregar el usuario azureuser al grupo docker
 
-bash
-Copy
-Edit
+```
 sudo usermod -aG docker azureuser
+```
 Esto permite ejecutar comandos Docker sin sudo.
 
 Cerrar la sesión SSH
-
-bash
-Copy
-Edit
+```
 exit
+```
 Es necesario reconectarse para que la pertenencia al grupo docker se aplique.
 
 Resultado
 ✅ Docker instalado, habilitado y configurado correctamente en la VM.
 El usuario azureuser ya tiene permisos para usar Docker sin privilegios de administrador en la próxima sesión.
 
-Registro de tarea — Prueba de funcionamiento de Docker con hello-world
-Objetivo
+### Registro de tarea — Prueba de funcionamiento de Docker con hello-world
+### Objetivo
+
 Verificar que Docker está instalado y operativo en la VM vm-cftec-m62025-SINT646-lab01, permitiendo la ejecución de contenedores y la descarga de imágenes desde Docker Hub.
 
-Pasos ejecutados
+### Pasos ejecutados
 Conexión a la VM
 
-bash
-Copy
-Edit
+```
 ssh -i ~/.ssh/id_rsa azureuser@4.155.211.247
+```
 Ejecución del contenedor de prueba
 
-bash
-Copy
-Edit
+```
 docker run hello-world
+```
 Acción:
 
-El cliente Docker (docker) envió la orden al demonio (dockerd).
+- El cliente Docker (docker) envió la orden al demonio (dockerd).
 
-Como la imagen hello-world no estaba disponible localmente, Docker la descargó desde Docker Hub.
+- Como la imagen hello-world no estaba disponible localmente, Docker la descargó desde Docker Hub.
 
-Se creó un contenedor temporal que ejecutó un script de verificación.
+- Se creó un contenedor temporal que ejecutó un script de verificación.
 
-El mensaje de bienvenida confirmó que todo está funcionando.
+- El mensaje de bienvenida confirmó que todo está funcionando.
 
-Salida obtenida:
+#### Salida obtenida:
 
-vbnet
-Copy
-Edit
+```
 Unable to find image 'hello-world:latest' locally
 latest: Pulling from library/hello-world
 e6590344b1a5: Pull complete
@@ -502,61 +473,54 @@ Status: Downloaded newer image for hello-world:latest
 Hello from Docker!
 This message shows that your installation appears to be working correctly.
 ...
+```
 Interpretación:
 
-Docker pudo comunicarse con el demonio y descargar imágenes desde Internet.
+- Docker pudo comunicarse con el demonio y descargar imágenes desde Internet.
 
-El contenedor se ejecutó exitosamente.
+- El contenedor se ejecutó exitosamente.
 
-El usuario azureuser tiene permisos correctos para ejecutar Docker sin sudo.
+- El usuario azureuser tiene permisos correctos para ejecutar Docker sin sudo.
 
 Resultado
 ✅ Docker operativo y listo para ejecutar contenedores para los servicios requeridos por el laboratorio (HBase, MongoDB, Redis).
 
-Registro de tarea — Implementación de MongoDB en contenedor Docker
-Objetivo
+### Registro de tarea — Implementación de MongoDB en contenedor Docker
+#### Objetivo
 Desplegar MongoDB en la VM vm-cftec-m62025-SINT646-lab01 como contenedor Docker para uso en el laboratorio.
 
-Pasos ejecutados
+#### Pasos ejecutados
 Conexión a la VM
 
-bash
-Copy
-Edit
+```
 ssh -i ~/.ssh/id_rsa azureuser@4.155.211.247
+```
 Descarga de la imagen oficial de MongoDB
-
-bash
-Copy
-Edit
+```
 docker pull mongo:latest
+```
 Resultado:
 
-makefile
-Copy
-Edit
+```
 latest: Pulling from library/mongo
 32f112e3802c: Pull complete
 ...
 Status: Downloaded newer image for mongo:latest
 docker.io/library/mongo:latest
+```
 Creación de volumen persistente para datos
 
-bash
-Copy
-Edit
+```
 docker volume create mongo_data
+```
 Resultado:
 
-nginx
-Copy
-Edit
+```
 mongo_data
+```
 Ejecución del contenedor MongoDB
 
-bash
-Copy
-Edit
+```
 docker run -d \
   --name mongodb \
   -p 27017:27017 \
@@ -564,39 +528,37 @@ docker run -d \
   -e MONGO_INITDB_ROOT_USERNAME=admin \
   -e MONGO_INITDB_ROOT_PASSWORD=admin123 \
   mongo:latest
+```
 Resultado:
 
-Copy
-Edit
+```
 030a105e7146f4a6d71207787b5a3488472c5478575258466b90c1d33db67e70
+```
 Verificación de contenedor activo
 
-bash
-Copy
-Edit
+```
 docker ps
+```
 Resultado:
 
-bash
-Copy
-Edit
+```
 CONTAINER ID   IMAGE          COMMAND                  CREATED          STATUS          PORTS                                           NAMES
 030a105e7146   mongo:latest   "docker-entrypoint.s…"   23 seconds ago   Up 22 seconds   0.0.0.0:27017->27017/tcp, :::27017->27017/tcp   mongodb
+```
 Acceso a la consola de MongoDB
 
-bash
-Copy
-Edit
+```
 docker exec -it mongodb mongosh -u admin -p admin123
+```
 Resultado:
 
-sql
-Copy
-Edit
+```
 Connecting to: mongodb://<credentials>@127.0.0.1:27017
 Using MongoDB: 8.0.12
 Using Mongosh: 2.5.6
 test>
+```
+
 Confirmación de conexión local exitosa.
 
 Resultado
@@ -604,155 +566,128 @@ Resultado
 Funciona en el puerto 27017 y es accesible localmente desde la propia VM.
 Datos persistentes en el volumen Docker mongo_data.
 
-Registro de tarea — Implementación de Redis en contenedor Docker
-Objetivo
+### Registro de tarea — Implementación de Redis en contenedor Docker
+#### Objetivo
 Desplegar Redis en la VM vm-cftec-m62025-SINT646-lab01 como contenedor Docker con persistencia de datos.
 
-Pasos ejecutados
+#### Pasos ejecutados
 Conexión a la VM
 
-bash
-Copy
-Edit
+```
 ssh -i ~/.ssh/id_rsa azureuser@4.155.211.247
+```
 Descarga de la imagen oficial de Redis
 
-bash
-Copy
-Edit
+```
 docker pull redis:latest
+```
 Resultado:
 
-makefile
-Copy
-Edit
+```
 latest: Pulling from library/redis
 59e22667830b: Pull complete
 ...
 Status: Downloaded newer image for redis:latest
 docker.io/library/redis:latest
+```
 Creación de volumen persistente
 
-bash
-Copy
-Edit
+```
 docker volume create redis_data
+```
 Resultado:
 
-nginx
-Copy
-Edit
+```
 redis_data
+```
 Ejecución del contenedor Redis
 
-bash
-Copy
-Edit
+```
 docker run -d \
   --name redis \
   -p 6379:6379 \
   -v redis_data:/data \
   redis:latest
+```
 Resultado:
 
-nginx
-Copy
-Edit
+```
 a7c3bd235592357277ed0396e550bc2fa13f86d7325fe5132900a53d221c2453
+```
 Verificación de contenedor activo
 
-bash
-Copy
-Edit
+```
 docker ps
+```
 Resultado:
 
-bash
-Copy
-Edit
+```
 CONTAINER ID   IMAGE          COMMAND                  CREATED         STATUS         PORTS                                           NAMES
 a7c3bd235592   redis:latest   "docker-entrypoint.s…"   7 seconds ago   Up 6 seconds   0.0.0.0:6379->6379/tcp, :::6379->6379/tcp       redis
 030a105e7146   mongo:latest   "docker-entrypoint.s…"   2 minutes ago   Up 2 minutes   0.0.0.0:27017->27017/tcp, :::27017->27017/tcp   mongodb
+```
 Conexión al cliente Redis
 
-bash
-Copy
-Edit
 docker exec -it redis redis-cli
 Resultado:
 
-makefile
-Copy
-Edit
+```
 127.0.0.1:6379>
+```
 Prueba de conexión
 Dentro del cliente Redis:
-
-bash
-Copy
-Edit
+```
 ping
+```
 Resultado esperado:
 
-nginx
-Copy
-Edit
+```
 PONG
+```
 Para salir:
 
-bash
-Copy
-Edit
+```
 exit
+```
 Resultado
 ✅ Redis desplegado y funcionando en el puerto 6379, con persistencia de datos en el volumen redis_data.
 Disponible para uso en el laboratorio junto con MongoDB.
 
 
-Registro de tarea — Implementación de HBase en contenedor Docker
-Objetivo
+### Registro de tarea — Implementación de HBase en contenedor Docker
+#### Objetivo
 Desplegar HBase en la VM vm-cftec-m62025-SINT646-lab01 como contenedor Docker en modo standalone para uso en el laboratorio.
 
-Pasos ejecutados
+#### Pasos ejecutados
 Conexión a la VM
 
-bash
-Copy
-Edit
+```
 ssh -i ~/.ssh/id_rsa azureuser@4.155.211.247
+```
 Descarga de la imagen de HBase
 
-bash
-Copy
-Edit
+```
 docker pull harisekhon/hbase
+```
 Resultado:
 
-vbnet
-Copy
-Edit
+```
 Using default tag: latest
 latest: Pulling from harisekhon/hbase
 ...
 Status: Downloaded newer image for harisekhon/hbase:latest
 docker.io/harisekhon/hbase:latest
+```
 Creación de volumen persistente
-
-bash
-Copy
-Edit
+```
 docker volume create hbase_data
+```
 Resultado:
-
-nginx
-Copy
-Edit
+```
 hbase_data
+```
 Ejecución del contenedor HBase
-
-bash
-Copy
-Edit
+```
 docker run -d \
   --name hbase \
   -p 16000:16000 \
@@ -762,80 +697,66 @@ docker run -d \
   -p 2181:2181 \
   -v hbase_data:/hbase-data \
   harisekhon/hbase
+```
 Resultado:
-
-nginx
-Copy
-Edit
+```
 c218beae29577eba6ed9fbf29beef520fdbedbdbed2895ec4d6c4046d68ea4f8
+```
 Verificación de contenedor activo
 
-bash
-Copy
-Edit
+```
 docker ps
+```
 Resultado:
-
-bash
-Copy
-Edit
+```
 CONTAINER ID   IMAGE              COMMAND                  CREATED          STATUS          PORTS                                                                                      NAMES
 c218beae2957   harisekhon/hbase   "/entrypoint.sh"         8 seconds ago    Up 7 seconds    0.0.0.0:2181->2181/tcp, 0.0.0.0:16000->16000/tcp, 0.0.0.0:16010->16010/tcp, 0.0.0.0:16020->16020/tcp, 0.0.0.0:16030->16030/tcp   hbase
+```
 Revisión de logs
-
-bash
-Copy
-Edit
+```
 docker logs hbase --tail 20
+```
 Resultado:
 
-Se muestran mensajes de inicialización de HMaster y HRegionServer.
+- Se muestran mensajes de inicialización de HMaster y HRegionServer.
 
-Zookeeper inició correctamente en el puerto 2181.
+- Zookeeper inició correctamente en el puerto 2181.
 
-HBase está listo para aceptar conexiones.
+- HBase está listo para aceptar conexiones.
 
-Puertos expuestos
-16000 → HMaster
-
-16010 → Web UI de HMaster (http://4.155.211.247:16010)
-
-16020 → HRegionServer
-
-16030 → Web UI de HRegionServer
-
-2181 → Zookeeper
+- Puertos expuestos:
+  
+  - 16000 → HMaster
+  - 16010 → Web UI de HMaster (http://4.155.211.247:16010)
+  - 16020 → HRegionServer
+  - 16030 → Web UI de HRegionServer
+  - 2181 → Zookeeper
 
 Resultado
 ✅ HBase desplegado y operativo en la VM, con acceso local y remoto a sus puertos y persistencia de datos en el volumen hbase_data.
 
-📄 Registro de tarea — Implementación de MongoDB y Mongo Express en contenedores Docker
-Fecha: 06/agosto/2025
-Responsable: Mario Brenes
+### Registro de tarea — Implementación de MongoDB y Mongo Express en contenedores Docker
 
-Objetivo
+#### Objetivo
 Desplegar MongoDB y Mongo Express en la VM del laboratorio, utilizando contenedores Docker, para disponer de una base de datos NoSQL y su interfaz web de administración, accesible desde la red pública del laboratorio.
 
-Actividades realizadas
+#### Actividades realizadas
 Verificación de Docker en la VM
 
-Confirmado que Docker está instalado y operativo (docker --version).
+- Confirmado que Docker está instalado y operativo (docker --version).
 
-Verificado que el usuario azureuser pertenece al grupo docker para ejecutar sin sudo.
+- Verificado que el usuario azureuser pertenece al grupo docker para ejecutar sin sudo.
 
-Despliegue de MongoDB
+- Despliegue de MongoDB
 
 Creado volumen persistente:
 
-bash
-Copy
-Edit
+```
 docker volume create mongo_data
+```
 Contenedor MongoDB:
 
-bash
-Copy
-Edit
+```
 docker run -d \
   --name mongodb \
   -p 27017:27017 \
@@ -843,25 +764,22 @@ docker run -d \
   -e MONGO_INITDB_ROOT_USERNAME=admin \
   -e MONGO_INITDB_ROOT_PASSWORD=admin123 \
   mongo:latest
+```
 Verificado acceso local con:
-
-bash
-Copy
-Edit
+```
 docker exec -it mongodb mongosh -u admin -p admin123 --authenticationDatabase admin
+```
 Despliegue de Mongo Express
 
-Inicialmente intentado con --link mongodb:mongo, pero fallaba la resolución de hostname en Docker moderno.
+- Inicialmente intentado con --link mongodb:mongo, pero fallaba la resolución de hostname en Docker moderno.
 
-Confirmado que Mongo Express se ejecuta correctamente y expone el puerto 8081.
+- Confirmado que Mongo Express se ejecuta correctamente y expone el puerto 8081.
 
-Se mantuvo la autenticación web por defecto de laboratorio (admin / pass).
+- Se mantuvo la autenticación web por defecto de laboratorio (admin / pass).
 
 Comando final utilizado:
 
-bash
-Copy
-Edit
+```
 docker run -d \
   --name mongo-express \
   -p 8081:8081 \
@@ -869,149 +787,137 @@ docker run -d \
   -e ME_CONFIG_MONGODB_ADMINPASSWORD=admin123 \
   -e ME_CONFIG_MONGODB_SERVER=mongodb \
   mongo-express:latest
+```
 Apertura de puerto en NSG
 
 Modificado network.tf para agregar regla NSG que permita acceso HTTP en puerto 8081 solo desde mi IP pública.
 
-Aplicado cambio con terraform apply.
+- Aplicado cambio con terraform apply.
 
-Verificación de acceso
+- Verificación de acceso
 
 Acceso exitoso a la interfaz web de Mongo Express desde:
 
-cpp
-Copy
-Edit
+```
 http://4.155.211.247:8081
+```
 Autenticación web:
-
-makefile
-Copy
-Edit
+```
 Usuario: admin
 Contraseña: pass
+```
 Confirmado listado de bases de datos admin, config y local.
 
+![Mongo Express](img/mongo01.png)
+
 Resultados
-MongoDB operativo y accesible en la VM del laboratorio.
 
-Mongo Express funcional como herramienta gráfica para administración de MongoDB.
+- MongoDB operativo y accesible en la VM del laboratorio.
 
-Acceso restringido mediante NSG para mejorar seguridad en el laboratorio.
+- Mongo Express funcional como herramienta gráfica para administración de MongoDB.
 
-Próximos pasos
-Implementar RedisInsight para Redis con interfaz web en puerto 8001.
+- Acceso restringido mediante NSG para mejorar seguridad en el laboratorio.
 
-Documentar el despliegue de herramientas gráficas para Redis y validar conectividad.
 
-Consolidar documentación para entrega final del laboratorio.
-
-Registro de tarea — Implementación de RedisInsight en contenedor Docker
-Objetivo
+### Registro de tarea — Implementación de RedisInsight en contenedor Docker
+#### Objetivo
 Implementar la interfaz gráfica RedisInsight en un contenedor Docker dentro de la VM vm-cftec-m62025-SINT646-lab01, para administrar y monitorear la base de datos Redis desplegada previamente.
 
-Procedimiento
+#### Procedimiento
 1. Preparación
-Verificar que Redis está corriendo en el contenedor redis en el puerto 6379.
+- Verificar que Redis está corriendo en el contenedor redis en el puerto 6379.
 
-Confirmar que el puerto 8001 está abierto en el NSG para la IP del cliente:
+- Confirmar que el puerto 8001 está abierto en el NSG para la IP del cliente:
 
-bash
-Copy
-Edit
+```
 terraform -chdir=terraform state show azurerm_network_security_group.lab_nsg | grep -A5 8001
+```
 2. Primer intento con imagen latest
-bash
-Copy
-Edit
+```
 docker run -d \
   --name redisinsight \
   -p 8001:8001 \
   --restart unless-stopped \
   redislabs/redisinsight:latest
+```
 Problema encontrado:
 
-El contenedor quedaba detenido en:
+- El contenedor quedaba detenido en:
 
-sql
-Copy
-Edit
+```
 Running docker-entry.sh
+```
 El puerto 8001 aparecía abierto, pero al acceder devolvía:
-
-nginx
-Copy
-Edit
+```
 ERR_CONNECTION_REFUSED
+```
 curl http://localhost:8001 devolvía Connection reset by peer.
 
 Logs sin información adicional después del arranque.
 
 3. Diagnóstico
-Confirmado que no era un problema de firewall/NSG (regla ya habilitada).
 
-Revisado que el contenedor corría (docker ps) pero sin inicializar la UI.
+- Confirmado que no era un problema de firewall/NSG (regla ya habilitada).
+
+- Revisado que el contenedor corría (docker ps) pero sin inicializar la UI.
 
 Conclusión: bug en la imagen latest.
 
 4. Solución aplicada
 Ejecutar RedisInsight con versión estable 1.14.0:
 
-bash
-Copy
-Edit
+```
 docker run -d \
   --name redisinsight \
   -p 8001:8001 \
   --restart unless-stopped \
   redislabs/redisinsight:1.14.0
+```
 Esta versión inicializó correctamente y mostró la UI.
 
 5. Validación de acceso
 Acceso exitoso desde el navegador:
 
-cpp
-Copy
-Edit
+```
 http://4.155.211.247:8001
+```
 Pantalla inicial solicitando conectar una base de datos Redis.
+
+![Redis](img/redis01.png)
 
 Verificación de logs:
 
-bash
-Copy
-Edit
+```
 docker logs redisinsight
+```
 Mostró inicio correcto del servicio.
 
 Resultado
-RedisInsight desplegado correctamente.
+
+-RedisInsight desplegado correctamente.
 
 Interfaz disponible en http://4.155.211.247:8001.
 
 Lista para configurar conexión al contenedor redis local.
 
 Notas
-Para producción, considerar versión 2.x de RedisInsight (requiere ajustes de imagen y compatibilidad).
 
-Mantener el puerto 8001 abierto solo para IP autorizada por seguridad.
+- Mantener el puerto 8001 abierto solo para IP autorizada por seguridad.
 
-RedisInsight 1.x está en End of Life, pero se mantiene en este laboratorio por simplicidad y estabilidad.
+- RedisInsight 1.x está en End of Life, pero se mantiene en este laboratorio por simplicidad y estabilidad.
 
-Registro de tarea — Implementación de HBase en contenedor Docker
-Objetivo
+### Registro de tarea — Implementación de HBase en contenedor Docker
+#### Objetivo
 Implementar Apache HBase en contenedor Docker con sus puertos de administración accesibles vía web, permitiendo monitorear el estado de Master y RegionServer.
 
-Procedimiento
+#### Procedimiento
 1. Preparación
 Verificar que Docker esté instalado y corriendo.
 
 Abrir puertos 16010 (Master UI) y 16030 (RegionServer UI) en el NSG para la IP autorizada 190.108.74.42.
 
 2. Implementación
-bash
-Copy
-Edit
+```
 docker pull harisekhon/hbase:latest
 docker volume create hbase_data
 
@@ -1024,40 +930,39 @@ docker run -d \
   -p 2181:2181 \
   -v hbase_data:/hbase-data \
   harisekhon/hbase
+```
 3. Validación
 Master UI: http://4.155.211.247:16010
 
 RegionServer UI: http://4.155.211.247:16030
 
-Logs:
+![Hbase](img/hbase01.png)
 
-bash
-Copy
-Edit
+Logs:
+```
 docker logs hbase --tail 20
+```
 Mostraron inicio exitoso y disponibilidad de servicios.
 
 Resultado
-HBase funcionando y accesible vía web.
+- HBase funcionando y accesible vía web.
 
-Puertos seguros, expuestos solo a IP autorizada.
+- Puertos seguros, expuestos solo a IP autorizada.
 
-Preparado para pruebas de integración con otras BD del laboratorio.
+- Preparado para pruebas de integración con otras BD del laboratorio.
 
-Registro de tarea — Implementación de Mongo Express en contenedor Docker
-Objetivo
+### Registro de tarea — Implementación de Mongo Express en contenedor Docker
+### Objetivo
 Implementar Mongo Express como interfaz web para administrar la base de datos MongoDB ya desplegada en contenedor Docker.
 
-Procedimiento
+#### Procedimiento
 1. Preparación
-Confirmar que MongoDB está en ejecución (docker ps).
+- Confirmar que MongoDB está en ejecución (docker ps).
 
-Abrir puerto 8081 en el NSG para la IP 190.108.74.42.
+- Abrir puerto 8081 en el NSG para la IP 190.108.74.42.
 
 2. Implementación
-bash
-Copy
-Edit
+```
 docker run -d \
   --name mongo-express \
   -p 8081:8081 \
@@ -1066,6 +971,7 @@ docker run -d \
   -e ME_CONFIG_MONGODB_SERVER=mongodb \
   --link mongodb:mongodb \
   mongo-express:latest
+```
 Nota: En laboratorio se usó admin / pass para simplificar autenticación.
 
 3. Validación
@@ -1074,39 +980,36 @@ Acceso web: http://4.155.211.247:8081
 Visualización de bases de datos: admin, config, local.
 
 Logs:
-
-bash
-Copy
-Edit
+```
 docker logs mongo-express --tail 20
+```
 Mostraron conexión establecida a MongoDB.
 
 Resultado
-Interfaz web funcional para gestión de MongoDB.
+- Interfaz web funcional para gestión de MongoDB.
 
-Puertos y acceso restringidos a IP autorizada.
+- Puertos y acceso restringidos a IP autorizada.
 
-Configuración válida para fines de laboratorio.
+- Configuración válida para fines de laboratorio.
 
-Registro de tarea — Implementación de RedisInsight en contenedor Docker
-Objetivo
+### Registro de tarea — Implementación de RedisInsight en contenedor Docker
+#### Objetivo
 Implementar RedisInsight para administración gráfica de Redis en contenedor Docker, facilitando visualización y configuración.
 
-Procedimiento
+#### Procedimiento
 1. Preparación
-Confirmar Redis en ejecución (docker ps).
+- Confirmar Redis en ejecución (docker ps).
 
-Abrir puerto 8001 en el NSG para la IP 190.108.74.42.
+- Abrir puerto 8001 en el NSG para la IP 190.108.74.42.
 
 2. Problemas detectados
 Imagen latest de RedisInsight no inicializaba correctamente.
 
 Logs mostraban:
 
-sql
-Copy
-Edit
+```
 Running docker-entry.sh
+```
 y no continuaba.
 
 curl http://localhost:8001 devolvía Connection reset by peer.
@@ -1114,115 +1017,106 @@ curl http://localhost:8001 devolvía Connection reset by peer.
 3. Solución aplicada
 Usar versión estable 1.14.0:
 
-bash
-Copy
-Edit
+```
 docker run -d \
   --name redisinsight \
   -p 8001:8001 \
   --restart unless-stopped \
   redislabs/redisinsight:1.14.0
+```
 4. Validación
 Acceso exitoso: http://4.155.211.247:8001
 
-Pantalla inicial solicitando conexión a Redis existente.
+- Pantalla inicial solicitando conexión a Redis existente.
 
-Logs mostraron inicio correcto.
+- Logs mostraron inicio correcto.
 
 Resultado
-RedisInsight desplegado y accesible vía web.
+- RedisInsight desplegado y accesible vía web.
 
-Configuración válida para entornos de laboratorio.
+- Configuración válida para entornos de laboratorio.
 
-Puerto expuesto solo a IP autorizada.
+- Puerto expuesto solo a IP autorizada.
 
-Registro de tarea — Configuración de Jupyter Notebook en VM para Laboratorio 1
-Objetivo
+### Registro de tarea — Configuración de Jupyter Notebook en VM para Laboratorio 1
+#### Objetivo
 Preparar un entorno Jupyter Notebook accesible vía navegador, protegido por contraseña, para desarrollar el Laboratorio 1 de la asignatura SINT646 — Deep Learning y Big Data con Python. El notebook servirá para trabajar con MongoDB, Redis y HBase en contenedores Docker y realizar las pruebas solicitadas.
 
-Acciones ejecutadas
-Instalación de dependencias base
+#### Acciones ejecutadas
+- Instalación de dependencias base
 
-Actualización de paquetes en la VM.
+- Actualización de paquetes en la VM.
 
-Instalación de python3, python3-pip y compiladores necesarios para librerías Python.
+- Instalación de python3, python3-pip y compiladores necesarios para librerías Python.
 
-Instalación de librerías requeridas para el laboratorio:
+- Instalación de librerías requeridas para el laboratorio:
 
-bash
-Copy
-Edit
+```
 pip3 install pymongo redis happybase thriftpy2 pandas
-Instalación de Jupyter Notebook
+```
+- Instalación de Jupyter Notebook
 
-Instalación de notebook<7 para evitar problemas de compatibilidad con Python 3.8.
+- Instalación de notebook<7 para evitar problemas de compatibilidad con Python 3.8.
 
-Ajuste de versiones de jinja2 y markupsafe para corregir error de importación.
+- Ajuste de versiones de jinja2 y markupsafe para corregir error de importación.
 
-Instalación en el entorno de usuario (--user) para evitar conflictos con paquetes del sistema.
+- Instalación en el entorno de usuario (--user) para evitar conflictos con paquetes del sistema.
 
-Configuración de Jupyter Notebook
+- Configuración de Jupyter Notebook
 
 Generación de archivo de configuración:
 
-bash
-Copy
-Edit
+```
 jupyter notebook --generate-config
+```
 Edición del archivo ~/.jupyter/jupyter_notebook_config.py para:
 
-Escuchar en todas las interfaces (0.0.0.0).
+- Escuchar en todas las interfaces (0.0.0.0).
 
-Definir puerto fijo 8888.
+- Definir puerto fijo 8888.
 
-Deshabilitar token y usar contraseña hash.
+- Deshabilitar token y usar contraseña hash.
 
-Deshabilitar apertura automática de navegador en el servidor.
+- Deshabilitar apertura automática de navegador en el servidor.
 
 Generación de hash para contraseña simple pass:
-
-bash
-Copy
-Edit
+```
 from notebook.auth import passwd
 passwd()
+```
 Hash aplicado:
-
-perl
-Copy
-Edit
+```
 argon2:$argon2id$v=19$m=10240,t=10,p=8$BcymMp8qCSRjbB29A7lACQ$xDsP/i38TtfPfRh6raE2z1QSRpDN7ZsiDKAzFyDc5Ik
+```
 Ejecución persistente con tmux
 
-Instalación y verificación de tmux.
+- Instalación y verificación de tmux.
 
 Creación de sesión persistente:
 
-bash
-Copy
-Edit
+```
 tmux new -s jupyterlab
+```
 Ejecución de Jupyter dentro de tmux:
-
-bash
-Copy
-Edit
+```
 jupyter notebook
+```
 Desacople de sesión (Ctrl+B luego D) para mantener el servicio activo tras cerrar SSH.
 
-Acceso desde el navegador
+- Acceso desde el navegador
 
 Acceso vía:
 
-cpp
-Copy
-Edit
+
 http://4.155.211.247:8888
 Login con contraseña simple: pass.
 
 Confirmación de funcionamiento correcto y acceso a interfaz vacía lista para cargar notebooks.
 
-Problemas enfrentados y soluciones
+![Jupiter Notebook](img/jupiter02.png)
+![Jupiter Notebook](img/jupiter01.png)
+
+#### Problemas enfrentados y soluciones
 Error de importación soft_unicode en MarkupSafe
 🔹 Solución: fijar versión compatible de jinja2==3.0.3 y markupsafe==2.0.1.
 
@@ -1235,288 +1129,154 @@ Pérdida del token al ejecutar en SSH
 Riesgo de detener Jupyter al cerrar SSH
 🔹 Solución: uso de tmux para mantener la sesión persistente.
 
-Próximos pasos
-Crear el notebook base para Laboratorio 1.
-
-Configurar conexiones Python a MongoDB, Redis y HBase en dicho notebook.
-
-Implementar carga del dataset y consultas solicitadas.
-
-Comparar tiempos y documentar resultados.
 
 ---
-las URLs de acceso quedarían así:
+### Las URLs de acceso quedarían así:
 
-Servicio	Puerto	URL de acceso
-Mongo Express	8081	http://4.155.211.247:8081
-RedisInsight	8001	http://4.155.211.247:8001
-HBase Master UI	16010	http://4.155.211.247:16010
-HBase RegionServer UI	16030	http://4.155.211.247:16030
-Jupyter Notebook	8888	http://4.155.211.247:8888
+| Servicio |	Puerto	|URL de acceso |
+| :------ | :------ | :------ |
+|Mongo Express |	8081|	http://4.155.211.247:8081|
+|RedisInsight	| 8001	| http://4.155.211.247:8001|
+|HBase Master UI |	16010	| http://4.155.211.247:16010 |
+| HBase RegionServer UI	| 16030	| http://4.155.211.247:16030 |
+| Jupyter Notebook |	8888	| http://4.155.211.247:8888 |
 
-⚠️ Credenciales
+### Credenciales
 
-Mongo Express → Usuario: admin / Clave: pass
+- Mongo Express → Usuario: admin / Clave: pass
 
-RedisInsight → Sin clave inicial (se configura al entrar)
+- RedisInsight → Sin clave inicial (se configura al entrar)
 
-Jupyter Notebook → Clave: pass
+- Jupyter Notebook → Clave: pass
 
 ---
 
-Registro de tarea – Jupyter Notebook no disponible tras reinicio de VM
-Fecha/Hora: 2025-08-06
-Recurso afectado: vm-cftec-m62025-SINT646-lab01
-Servicio(s) implicado(s): Jupyter Notebook, MongoDB, Redis, HBase, RedisInsight
+### Registro de tarea – Jupyter Notebook no disponible tras reinicio de VM
 
-Resumen
+#### Resumen
 Después de reiniciar la máquina virtual, el servicio de Jupyter Notebook dejó de responder en el puerto 8888 (ERR_CONNECTION_REFUSED).
+
 Esto se debe a que el proceso de Jupyter no se inicia automáticamente al reiniciar la VM y tampoco estaba corriendo en un proceso persistente.
 
-Acciones ejecutadas
+#### Acciones ejecutadas
 Verificación de conectividad:
 
-Confirmado que el puerto 8888 está permitido en el NSG para la IP del usuario.
+- Confirmado que el puerto 8888 está permitido en el NSG para la IP del usuario.
 
-Verificado que no hay reglas de firewall adicionales que bloqueen el acceso.
+- Verificado que no hay reglas de firewall adicionales que bloqueen el acceso.
 
-Análisis del proceso:
+#### Análisis del proceso:
 
-Validado que no existe ninguna sesión tmux activa con Jupyter Notebook (tmux attach -t jupyterlab → no sessions).
+- Validado que no existe ninguna sesión tmux activa con Jupyter Notebook (tmux attach -t jupyterlab → no sessions).
 
-Determinado que el proceso no sobrevive a reinicios.
+- Determinado que el proceso no sobrevive a reinicios.
 
-Propuesta de solución inmediata:
+**Propuesta de solución inmediata:**
 
-Iniciar manualmente Jupyter en una nueva sesión tmux:
+- Iniciar manualmente Jupyter en una nueva sesión tmux:
 
-bash
-Copy
-Edit
+```
 tmux new -s jupyterlab
 jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser
+```
 Luego salir de tmux con Ctrl+B y D.
 
-Propuesta de solución permanente:
+**Propuesta de solución permanente:**
 
 Modificar el script restart_lab_services.sh para que Jupyter Notebook se ejecute automáticamente en un tmux al reiniciar la VM:
 
-bash
-Copy
-Edit
+```
 tmux new -d -s jupyterlab "jupyter notebook --ip=0.0.0.0 --port=8888 --no-browser"
+```
 Definición del problema (perspectiva cliente)
 Después de reiniciar la VM, los servicios de laboratorio deben estar disponibles sin intervención manual. Actualmente, MongoDB, Redis, HBase y RedisInsight se inician automáticamente, pero Jupyter Notebook requiere ejecución manual.
 
-Próximos pasos acordados
-Actualizar restart_lab_services.sh para incluir el arranque automático de Jupyter en tmux.
-
-Validar después del próximo reinicio que Jupyter esté disponible en el puerto 8888 sin intervención manual.
-
-Documentar procedimiento para levantarlo manualmente en caso de emergencia.
 
 ---
 
-Registro de tarea — Limpieza y Preprocesamiento del Dataset
-Resumen:
+### Registro de tarea — Limpieza y Preprocesamiento del Dataset
+#### Resumen:
 Se realizó la limpieza y preprocesamiento del dataset kz.csv proveniente del conjunto E-commerce Purchase History from Electronics Store. El dataset original contenía 2,633,521 registros y 8 columnas. Se identificaron valores nulos en varias columnas, especialmente en category_id, category_code, brand, price y user_id.
 
-Acciones ejecutadas:
+#### Acciones ejecutadas:
 
-Carga inicial del dataset en un DataFrame de Pandas.
+- Carga inicial del dataset en un DataFrame de Pandas.
 
-Análisis exploratorio inicial para identificar:
+- Análisis exploratorio inicial para identificar:
 
-Tipo de datos por columna.
+- Tipo de datos por columna.
 
-Número total de registros.
+- Número total de registros.
 
-Cantidad de valores nulos por columna.
+- Cantidad de valores nulos por columna.
 
-Estrategia de preprocesamiento definida:
+- Estrategia de preprocesamiento definida:
+  - Mantener todas las columnas para consistencia con las otras bases de datos.
+  - Eliminar o imputar valores nulos solo si impactan en los cálculos solicitados.
+  - No realizar transformaciones destructivas sobre price o brand sin análisis posterior.
+  - Verificación de memoria para asegurar que las operaciones no saturen la VM.
 
-Mantener todas las columnas para consistencia con las otras bases de datos.
+- Guardado del DataFrame limpio para su uso posterior en inserción en MongoDB, Redis y HBase.
 
-Eliminar o imputar valores nulos solo si impactan en los cálculos solicitados.
-
-No realizar transformaciones destructivas sobre price o brand sin análisis posterior.
-
-Verificación de memoria para asegurar que las operaciones no saturen la VM.
-
-Guardado del DataFrame limpio para su uso posterior en inserción en MongoDB, Redis y HBase.
-
-Definición del problema desde la perspectiva del cliente:
-Necesitamos garantizar que el dataset esté limpio y consistente para que los resultados de las consultas comparativas entre bases de datos sean fiables y no estén sesgados por datos faltantes o inconsistentes.
-
-Próximos pasos:
-
-Verificar nuevamente valores nulos en el dataset limpio.
-
-Realizar inserción por bloques en MongoDB, Redis y HBase para evitar saturar la VM.
-
-Documentar tiempos de inserción y respuesta para consultas clave.
 
 ---
 
-Registro de tarea — Limpieza y Preprocesamiento del Dataset (Actualización)
-Hallazgos tras la verificación de valores nulos:
+### Registro de tarea — Limpieza y Preprocesamiento del Dataset (Actualización)
+#### Hallazgos tras la verificación de valores nulos:
 
-Columna	Valores Nulos	% del Total aprox.
-event_time	0	0.00%
-order_id	0	0.00%
-product_id	0	0.00%
-category_id	431,954	16.40%
-category_code	612,202	23.20%
-brand	506,005	19.20%
-price	431,954	16.40%
-user_id	2,069,352	78.60%
+|Columna	| Valores Nulos| 	% del Total aprox.|
+| :----- | :----- | :----- |
+|event_time	| 0	| 0.00% |
+|order_id	| 0	| 0.00% |
+|product_id	|0	|0.00% |
+|category_id	| 431,954 |	16.40%|
+|category_code	| 612,202	| 23.20%|
+|brand	|506,005	|19.20% |
+|price	|431,954	|16.40%|
+|user_id	|2,069,352	|78.60%
 
-Conclusiones de esta verificación:
+**Conclusiones de esta verificación:**
 
-event_time, order_id y product_id están completos.
+- event_time, order_id y product_id están completos.
 
-user_id presenta una ausencia significativa (~78%), lo que lo hace poco confiable para análisis directos.
+- user_id presenta una ausencia significativa (~78%), lo que lo hace poco confiable para análisis directos.
 
-Las columnas de categoría (category_id, category_code), brand y price presentan un porcentaje relevante de nulos.
+- Las columnas de categoría (category_id, category_code), brand y price presentan un porcentaje relevante de nulos.
 
-No se ha aplicado imputación o eliminación de registros todavía para conservar la integridad y representatividad del dataset.
+- No se ha aplicado imputación o eliminación de registros todavía para conservar la integridad y representatividad del dataset.
 
-Próximo paso inmediato:
+**Próximo paso inmediato:**
 
-Mantener el dataset tal cual para inserción en MongoDB, Redis y HBase, documentando el porcentaje de nulos para que se considere en el análisis de consultas.
+- Mantener el dataset tal cual para inserción en MongoDB, Redis y HBase, documentando el porcentaje de nulos para que se considere en el análisis de consultas.
 
-Evaluar más adelante si se imputan o eliminan estos nulos dependiendo de los requisitos de las consultas comparativas.
-
----
-
-Registro de tarea — Carga del dataset en Redis
-Objetivo
-Cargar el dataset E-commerce Purchase History en Redis de forma controlada, optimizando el rendimiento y evitando la duplicación de datos provenientes de ejecuciones anteriores.
-
-Acciones ejecutadas
-Conexión a Redis usando redis-py (redis.Redis()), con verificación de disponibilidad mediante ping().
-
-Lectura del dataset en pandas.DataFrame desde la ruta ./datasets/ecommerce/kz.csv.
-
-Definición de CHUNK_SIZE = 100_000 para realizar inserciones en bloques y reducir el riesgo de saturar la VM.
-
-Eliminación previa de datos antiguos:
-
-Identificación de claves con patrón purchase:*.
-
-Eliminación en lotes de hasta 10 000 claves por operación para no saturar Redis.
-
-Inserción de datos en Redis:
-
-Uso de pipeline para agrupar múltiples operaciones y mejorar el rendimiento.
-
-Conversión de valores NaN a cadenas vacías ("") para evitar incompatibilidades.
-
-Almacenamiento de cada registro como un hash en Redis con clave purchase:<índice>.
-
-Medición de tiempos:
-
-Tiempo por bloque.
-
-Tiempo total de inserción.
-
-Definición del problema (desde la perspectiva del laboratorio)
-La carga de un dataset de más de 2.6 millones de registros en Redis puede provocar:
-
-Saturación de CPU y memoria si se intenta insertar todo en una sola operación.
-
-Duplicación de datos si no se eliminan cargas anteriores.
-
-Latencia en inserción si no se optimiza la escritura.
-
-Resultados
-Conexión: Redis aceptó conexiones desde la VM sin errores.
-
-Borrado de datos previos: Eliminadas todas las claves antiguas purchase:* antes de la nueva carga.
-
-Inserción optimizada: Uso de pipeline y carga en bloques permitió procesar el dataset sin saturar la VM.
-
-Datos accesibles: Los registros son consultables con comandos como:
-
-bash
-Copy
-Edit
-redis-cli HGETALL purchase:0
-Tiempo total: Registrado al finalizar el proceso, junto con tiempos por bloque.
-
-Próximos pasos
-Repetir el procedimiento para HBase siguiendo la misma estrategia de:
-
-Limpieza previa.
-
-Inserción por bloques.
-
-Medición de tiempos.
-
-Comparar los tiempos de inserción y consulta entre MongoDB, Redis y HBase.
+- Evaluar más adelante si se imputan o eliminan estos nulos dependiendo de los requisitos de las consultas comparativas.
 
 ---
-📄 Registro de Tarea — Carga del dataset en Redis
-Actividad: Inserción del dataset limpio en Redis en bloques de 100 000 registros utilizando pipeline para optimizar el rendimiento.
-Objetivo: Medir rendimiento y consumo de recursos durante la carga.
+### Registro de Tarea — Carga del dataset en MongoDB
 
-⚙️ Configuración de prueba
+#### Actividad: Inserción del dataset limpio en MongoDB en bloques de 100 000 registros utilizando insert_many() para optimizar el rendimiento.
+
+#### Objetivo: Cargar el dataset completo midiendo tiempos por bloque y consumo de recursos.
+
+#### ⚙️ Configuración de prueba
 Dataset: 2 633 521 registros (kz.csv)
 
-Bloques de inserción: 100 000 registros por batch
+- Bloques de inserción: 100 000 registros por batch (último bloque de 33 521)
 
-Redis: Contenedor Docker redis:latest
+- MongoDB: Contenedor Docker mongo:6.0 con autenticación admin / pass
 
-VM: Standard_A4m_v2 — 8 vCPU, 32 GB RAM
+- VM: Standard_A4m_v2 — 8 vCPU, 32 GB RAM
 
-Script: Python con redis-py y pipeline(transaction=False)
+- Script: Python con pymongo, limpieza previa de la colección (drop()) para evitar duplicados
 
-📊 Métricas de rendimiento (Azure Monitor)
-Periodo observado: durante toda la inserción del dataset.
-
-Métrica	Valor Promedio	Observaciones
-CPU (Percentage CPU)	~20 % (picos 65 %)	Incrementos durante los batches, con caídas entre lotes.
-Memoria disponible (Available Memory %)	~84 %	Uso moderado; Redis maneja los datos en memoria eficientemente.
-Data Disk IOPS Consumed %	Bajo	No hubo saturación de IOPS, Redis es predominantemente in-memory.
-Data Disk Latency	Casi nulo	Escritura muy rápida por ser en memoria; mínima espera en disco.
-Data Disk Read/Write Bytes/Sec	Lectura mínima / Escritura muy baja	No hubo dependencia fuerte de disco persistente.
-
-📝 Notas
-La carga en bloques evita saturar CPU y memoria.
-
-Redis respondió rápidamente debido a su naturaleza en memoria, con baja latencia.
-
-Redis se comporta mejor que MongoDB en términos de uso de CPU y disco para esta etapa, aunque la persistencia depende de snapshots y AOF si se habilitan.
-
-En cargas repetidas es clave eliminar previamente claves antiguas para evitar duplicados (DEL purchase:*).
-
----
-
-📄 Registro de Tarea — Carga del dataset en MongoDB
-Actividad: Inserción del dataset limpio en MongoDB en bloques de 100 000 registros utilizando insert_many() para optimizar el rendimiento.
-Objetivo: Cargar el dataset completo midiendo tiempos por bloque y consumo de recursos.
-
-⚙️ Configuración de prueba
-Dataset: 2 633 521 registros (kz.csv)
-
-Bloques de inserción: 100 000 registros por batch (último bloque de 33 521)
-
-MongoDB: Contenedor Docker mongo:6.0 con autenticación admin / pass
-
-VM: Standard_A4m_v2 — 8 vCPU, 32 GB RAM
-
-Script: Python con pymongo, limpieza previa de la colección (drop()) para evitar duplicados
-
-📊 Tiempos de inserción
-Promedio por bloque: ~4.3 segundos
-Tiempo total: 114.76 segundos
-Total documentos insertados: 2 633 521
+#### 📊 Tiempos de inserción
+- Promedio por bloque: ~4.3 segundos
+- Tiempo total: 114.76 segundos
+- Total documentos insertados: 2 633 521
 
 Ejemplo de ejecución:
 
-yaml
-Copy
-Edit
+```
 🧹 Colección limpiada antes de la inserción.
 ✅ Bloque 1: 100000 registros (4.19 seg)
 ✅ Bloque 2: 100000 registros (4.67 seg)
@@ -1525,97 +1285,133 @@ Edit
 ✅ Bloque 27: 33521 registros (1.56 seg)
 ⏱ Tiempo total: 114.76 seg
 📊 Total documentos insertados: 2633521
-📊 Métricas de rendimiento (Azure Monitor)
-Periodo observado: durante la inserción del dataset.
 
-Métrica	Valor Promedio	Observaciones
-CPU (Percentage CPU)	~20–25 % (picos >50 %)	Actividad constante durante cada batch.
-Memoria disponible (Available Memory %)	~80–82 %	MongoDB usa memoria para cache/buffers, estable en la prueba.
-Data Disk IOPS Consumed %	Moderado	Picos coinciden con inserciones en disco.
-Data Disk Latency	Baja	MongoDB maneja escritura rápida con journaling activo.
-Data Disk Read/Write Bytes/Sec	Escrituras constantes	La escritura crece proporcional al tamaño del batch insertado.
+```
+#### Métricas de rendimiento (Azure Monitor)
+
+- Periodo observado: durante la inserción del dataset:
+  
+  |Métrica	| Valor Promedio	| Observaciones |
+  | :----- | :----- | :----- |
+  | CPU (Percentage CPU)	| ~20–25 % | (picos >50 %)	Actividad constante durante cada batch. |
+  | Memoria disponible (Available Memory %)	| ~80–82 %	| MongoDB usa memoria para cache/buffers, estable en la prueba. |
+  |Data Disk IOPS Consumed %	| Moderado	| Picos coinciden con inserciones en disco.|
+  |Data Disk Latency	| Baja	| MongoDB maneja escritura rápida con journaling activo. |
+  |Data Disk Read/Write Bytes/Sec	| Escrituras constantes	| La escritura crece proporcional al tamaño del batch insertado.|
+
+  ![MongoDB](img/vm_performance_01_InsertingToMongo.png)
 
 📝 Notas
-MongoDB consume más I/O que Redis en la carga inicial debido a la persistencia inmediata en disco.
+- MongoDB consume más I/O que Redis en la carga inicial debido a la persistencia inmediata en disco.
 
-La carga por lotes de 100 000 evita saturación y mantiene uso estable de CPU y memoria.
+- La carga por lotes de 100 000 evita saturación y mantiene uso estable de CPU y memoria.
 
-Es fundamental limpiar la colección antes de una nueva inserción para evitar duplicados (drop()).
+- Es fundamental limpiar la colección antes de una nueva inserción para evitar duplicados (drop()).
 
 ---
+### Registro de tarea — Carga del dataset en Redis
+#### Objetivo
+Cargar el dataset E-commerce Purchase History en Redis de forma controlada, optimizando el rendimiento y evitando la duplicación de datos provenientes de ejecuciones anteriores.
 
-📄 Registro de Tarea — Carga del dataset en Redis
-Actividad: Inserción del dataset limpio en Redis en bloques de 100 000 registros utilizando pipeline.hset() para maximizar el rendimiento.
-Objetivo: Cargar el dataset completo en Redis, midiendo tiempos por bloque y monitoreando el consumo de recursos de la VM.
+#### Acciones ejecutadas
+- Conexión a Redis usando redis-py (redis.Redis()), con verificación de disponibilidad mediante ping().
 
-⚙️ Configuración de prueba
-Dataset: 2 633 521 registros (kz.csv)
+- Lectura del dataset en pandas.DataFrame desde la ruta ./datasets/ecommerce/kz.csv.
 
-Bloques de inserción: 100 000 registros por batch (último bloque de 33 521)
+- Definición de CHUNK_SIZE = 100_000 para realizar inserciones en bloques y reducir el riesgo de saturar la VM.
 
-Redis: Contenedor Docker redis:7
+- Eliminación previa de datos antiguos:
+  - Identificación de claves con patrón purchase:*.
+  - Eliminación en lotes de hasta 10 000 claves por operación para no saturar Redis.
 
-VM: Standard_A4m_v2 — 8 vCPU, 32 GB RAM
+- Inserción de datos en Redis:
+  - Uso de pipeline para agrupar múltiples operaciones y mejorar el rendimiento.
+  - Conversión de valores NaN a cadenas vacías ("") para evitar incompatibilidades.
+  - Almacenamiento de cada registro como un hash en Redis con clave purchase:<índice>.
+  - Bloques de inserción: 100 000 registros por batch
 
-Script: Python con redis-py, limpieza previa de claves (r.keys("purchase:*")) para evitar duplicados.
+Medición de tiempos:
+```
+Total de registros en dataset: 2,633,521
 
-📊 Tiempos de inserción
-Promedio por bloque: ~40.5 segundos
-Tiempo total: 1 065.80 segundos (~17.8 min)
-Total documentos insertados: 2 633 521
-
-Ejemplo de ejecución:
-
-yaml
-Copy
-Edit
-✅ Conectado a Redis
-📦 Total de registros en dataset: 2,633,521
-🧹 Eliminadas 1,200,000 claves antiguas en Redis
-✅ Bloque 1: 100,000 registros en 41.48 seg
+Tiempo por bloque.
+✅ Bloque 1: 100,000 registros en 42.05 seg
+✅ Bloque 2: 100,000 registros en 40.58 seg
+✅ Bloque 3: 100,000 registros en 40.79 seg
+✅ Bloque 4: 100,000 registros en 40.61 seg
+✅ Bloque 5: 100,000 registros en 40.09 seg
 ...
-✅ Bloque 26: 100,000 registros en 40.33 seg
-✅ Bloque 27: 33,521 registros en 13.37 seg
-🏁 Inserción total completada en 1065.80 segundos
-📊 Métricas de rendimiento (Azure Monitor)
-Periodo observado: durante la inserción del dataset.
+✅ Bloque 24: 100,000 registros en 41.60 seg
+✅ Bloque 25: 100,000 registros en 41.37 seg
+✅ Bloque 26: 100,000 registros en 42.68 seg
+✅ Bloque 27: 33,521 registros en 13.66 seg
 
-Métrica	Valor Promedio	Observaciones
-CPU (Percentage CPU)	~20–35 % (picos cercanos a 60 %)	Picos al inicio de cada bloque.
-Memoria disponible (Available Memory %)	~80–84 %	Redis almacena todo en memoria, estable durante la carga.
-Data Disk IOPS Consumed %	Bajo	Redis es in-memory, poca escritura directa a disco.
-Data Disk Latency	Muy baja	Sin impacto notable en el rendimiento.
-Data Disk Write Bytes/Sec	Bajo	Ligero aumento por persistencia de snapshots (RDB).
+Tiempo total de inserción.
+🏁 Inserción total completada en 1086.61 segundos
+```
+**Definición del problema (desde la perspectiva del laboratorio)**
+- La carga de un dataset de más de 2.6 millones de registros en Redis puede provocar:
 
-📝 Notas
-Redis es significativamente más lento que MongoDB en esta carga debido a la inserción de hashes individuales para cada registro.
+- Saturación de CPU y memoria si se intenta insertar todo en una sola operación.
 
-El uso de pipeline redujo la latencia de red, pero la operación sigue siendo CPU-bound y single-threaded en el proceso de escritura.
+- Duplicación de datos si no se eliminan cargas anteriores.
 
-Eliminar las claves antiguas antes de la inserción es esencial para evitar duplicados y consumo excesivo de memoria.
+- Latencia en inserción si no se optimiza la escritura.
 
-Si se prioriza la velocidad sobre la persistencia, se podría desactivar temporalmente el guardado RDB/AOF durante la carga.
+#### Resultados
+- Conexión: Redis aceptó conexiones desde la VM sin errores.
+
+- Borrado de datos previos: Eliminadas todas las claves antiguas purchase:* antes de la nueva carga.
+
+- Inserción optimizada: Uso de pipeline y carga en bloques permitió procesar el dataset sin saturar la VM.
+
+- Datos accesibles: Los registros son consultables con comandos como:
+
+```
+redis-cli HGETALL purchase:0
+```
 
 ---
 
-Registro de Tarea — Carga del Dataset en HBase
-Objetivo: Insertar el dataset limpio de compras electrónicas en HBase utilizando inserción por bloques para evitar saturación de recursos.
 
-Acciones Ejecutadas
+📊 Métricas de rendimiento (Azure Monitor)
+Periodo observado: durante toda la inserción del dataset.
+
+| Métrica |	Valor Promedio	| Observaciones |
+| :----- | :----- | :----- |
+| CPU (Percentage CPU)	| ~20 % | (picos 65 %)	Incrementos durante los batches, con caídas entre lotes.|
+|Memoria disponible (Available Memory %)	| ~84 %	| Uso moderado; Redis maneja los datos en memoria eficientemente.|
+| Data Disk IOPS Consumed %	| Bajo	| No hubo saturación de IOPS, Redis es predominantemente in-memory.|
+| Data Disk Latency	| Casi nulo	| Escritura muy rápida por ser en memoria; mínima espera en disco.|
+|Data Disk Read/Write Bytes/Sec	| Lectura mínima / Escritura muy baja	| No hubo dependencia fuerte de disco persistente.|
+
+
+📝 Notas
+- La carga en bloques evita saturar CPU y memoria.
+- Redis respondió rápidamente debido a su naturaleza en memoria, con baja latencia.
+- Redis no se comporta mejor que MongoDB en términos de uso de CPU y disco para esta etapa, aunque la persistencia depende de snapshots y AOF si se habilitan.
+- En cargas repetidas es clave eliminar previamente claves antiguas para evitar duplicados (DEL purchase:*).
+- Redis es significativamente más lento que MongoDB en esta carga debido a la inserción de hashes individuales para cada registro.
+- El uso de pipeline redujo la latencia de red, pero la operación sigue siendo CPU-bound y single-threaded en el proceso de escritura.
+- Eliminar las claves antiguas antes de la inserción es esencial para evitar duplicados y consumo excesivo de memoria.
+- Si se prioriza la velocidad sobre la persistencia, se podría desactivar temporalmente el guardado RDB/AOF durante la carga.
+
+
+---
+
+### Registro de Tarea — Carga del Dataset en HBase
+#### Objetivo: Insertar el dataset limpio de compras electrónicas en HBase utilizando inserción por bloques para evitar saturación de recursos.
+
+#### Acciones Ejecutadas
 Conexión a HBase mediante happybase (Thrift en puerto 9090).
 
-Creación de la tabla purchases con familia de columnas cf si no existía.
-
-Limpieza previa de la tabla (eliminación de registros antiguos) para evitar duplicados.
-
-Carga del dataset kz.csv (2 633 521 registros) usando bloques de 100 000 registros.
-
-Inserción optimizada utilizando batch() para reducir overhead de conexión.
+- Creación de la tabla purchases con familia de columnas cf si no existía.
+- Limpieza previa de la tabla (eliminación de registros antiguos) para evitar duplicados.
+- Carga del dataset kz.csv (2 633 521 registros) usando bloques de 100 000 registros.
+- Inserción optimizada utilizando batch() para reducir overhead de conexión.
 
 Ejecución
-yaml
-Copy
-Edit
+```
 ✅ Conectado a HBase
 🆕 Tabla creada: purchases
 🧹 Limpiando registros antiguos de la tabla...
@@ -1627,93 +1423,65 @@ Edit
 ✅ Bloque 3: 100,000 registros en 45.49 segundos
 ✅ Bloque 4: 100,000 registros en 46.09 segundos
 ✅ Bloque 5: 100,000 registros en 46.36 segundos
-✅ Bloque 6: 100,000 registros en 46.98 segundos
-✅ Bloque 7: 100,000 registros en 47.41 segundos
-✅ Bloque 8: 100,000 registros en 46.85 segundos
-✅ Bloque 9: 100,000 registros en 46.06 segundos
-✅ Bloque 10: 100,000 registros en 45.91 segundos
-✅ Bloque 11: 100,000 registros en 46.08 segundos
-✅ Bloque 12: 100,000 registros en 45.59 segundos
-✅ Bloque 13: 100,000 registros en 47.15 segundos
-✅ Bloque 14: 100,000 registros en 45.59 segundos
-✅ Bloque 15: 100,000 registros en 45.02 segundos
-✅ Bloque 16: 100,000 registros en 47.15 segundos
-✅ Bloque 17: 100,000 registros en 47.44 segundos
-✅ Bloque 18: 100,000 registros en 49.85 segundos
-✅ Bloque 19: 100,000 registros en 47.66 segundos
-✅ Bloque 20: 100,000 registros en 46.70 segundos
-✅ Bloque 21: 100,000 registros en 45.63 segundos
-✅ Bloque 22: 100,000 registros en 46.35 segundos
-✅ Bloque 23: 100,000 registros en 46.87 segundos
+...
 ✅ Bloque 24: 100,000 registros en 45.44 segundos
 ✅ Bloque 25: 100,000 registros en 46.87 segundos
 ✅ Bloque 26: 100,000 registros en 45.85 segundos
 ✅ Bloque 27: 33,521 registros en 15.18 segundos
 
 🏁 Inserción total completada en 1227.67 segundos
-Observaciones de Rendimiento
-Inserción estable en la mayoría de bloques (~45–47 segundos/bloque).
-
-Bloques iniciales ligeramente más lentos por la creación y preparación de la tabla.
-
-Uso de batch() en HappyBase ayudó a mantener la latencia de escritura constante.
-
-El rendimiento general fue más lento que en MongoDB y Redis, consistente con el diseño de HBase orientado a escritura masiva distribuida.
+```
+#### Observaciones de Rendimiento
+- Inserción estable en la mayoría de bloques (~45–47 segundos/bloque).
+- Bloques iniciales ligeramente más lentos por la creación y preparación de la tabla.
+- Uso de batch() en HappyBase ayudó a mantener la latencia de escritura constante.
+- El rendimiento general fue más lento que en MongoDB y Redis, consistente con el diseño de HBase orientado a escritura masiva distribuida.
 
 ---
 
-Registro de tarea exitosa — Ajuste de configuración HBase en contenedor Docker y validación de lectura desde Jupyter Notebook
-Objetivo
-Ajustar la configuración de HBase en el contenedor hbase para evitar errores de conexión (Broken pipe) durante consultas masivas desde Python usando happybase.
-Validar que después del cambio la base de datos es accesible y que la tabla purchases puede ser leída desde el laboratorio en Jupyter Notebook.
+### Registro de tarea — Ajuste de configuración HBase en contenedor Docker y validación de lectura desde Jupyter Notebook
+#### Objetivo
+- Ajustar la configuración de HBase en el contenedor hbase para evitar errores de conexión (Broken pipe) durante consultas masivas desde Python usando happybase.
+- Validar que después del cambio la base de datos es accesible y que la tabla purchases puede ser leída desde el laboratorio en Jupyter Notebook.
 
-Pasos ejecutados
+#### Pasos ejecutados
 1. Identificación del contenedor HBase en la VM
 Desde la sesión SSH en la VM vm-cftec-m62025-SINT646-lab01 se listaron los contenedores activos:
 
-bash
-Copy
-Edit
+```
 docker ps --format "table {{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}"
+```
 Se identificó el contenedor de HBase:
 
-bash
-Copy
-Edit
+```
 CONTAINER ID   IMAGE                   NAMES
 4bbf4771109c   harisekhon/hbase:latest hbase
+```
 2. Acceso al contenedor HBase
 Se abrió una sesión interactiva en el contenedor:
 
-bash
-Copy
-Edit
+```
 docker exec -it hbase bash
+```
 3. Localización del archivo de configuración
 Dentro del contenedor se localizó hbase-site.xml:
-
-bash
-Copy
-Edit
+```
 find / -name "hbase-site.xml" 2>/dev/null
+```
 Resultado:
 
-bash
-Copy
-Edit
+```
 /hbase-2.1.3/conf/hbase-site.xml
+```
 4. Edición de la configuración
 Se editó el archivo con vi:
 
-bash
-Copy
-Edit
+```
 vi /hbase-2.1.3/conf/hbase-site.xml
+```
 Añadiendo / modificando los parámetros para aumentar tiempo de espera y reducir tamaño de lotes:
 
-xml
-Copy
-Edit
+```
 <property>
     <name>hbase.rpc.timeout</name>
     <value>600000</value>
@@ -1733,58 +1501,47 @@ Edit
     <name>hbase.client.scanner.caching</name>
     <value>500</value>
 </property>
-Nota: Los valores están en milisegundos (600000 = 10 minutos).
+```
+- Nota: Los valores están en milisegundos (600000 = 10 minutos).
 scanner.caching ajustado a 500 para evitar envío de lotes muy grandes.
 
 5. Reinicio del contenedor HBase
 Se guardaron los cambios y se reinició el contenedor:
-
-bash
-Copy
-Edit
+```
 docker restart hbase
+```
 Confirmando que volvió a estar activo:
-
-bash
-Copy
-Edit
+```
 docker ps
+```
 6. Validación de conexión desde Jupyter Notebook
 En el laboratorio .ipynb se verificó la conexión:
 
-python
-Copy
-Edit
+```
 import happybase
 connection = happybase.Connection(host='localhost', port=9090)
 connection.open()
 print(connection.tables())
+```
 Salida esperada:
-
-css
-Copy
-Edit
+```
 [b'purchases']
+```
 7. Prueba de lectura
 Se consultaron las primeras 3 filas:
 
-python
-Copy
-Edit
+```
 table = connection.table('purchases')
 for key, data in table.scan(limit=3):
     print(key, data)
+```
 Resultado exitoso:
-
-bash
-Copy
-Edit
+```
 b'2294359932054536986' {b'cf:brand': b'samsung', b'cf:price': b'162.01', ...}
 b'2294444024058086220' {b'cf:brand': b'huawei', b'cf:price': b'77.52', ...}
 b'2294584263154074236' {b'cf:brand': b'karcher', b'cf:price': b'217.57', ...}
+```
 Resultado
-✅ Ajustes de configuración aplicados correctamente en HBase.
-✅ Conexión establecida con éxito desde Jupyter Notebook.
-✅ Lectura de la tabla purchases funcionando sin errores.
-
-Si quieres, puedo ahora prepararte otro registro de tarea exitosa para la ejecución del script optimizado que probaremos después para verificar que el Broken pipe ya no ocurre.
+- Ajustes de configuración aplicados correctamente en HBase.
+- Conexión establecida con éxito desde Jupyter Notebook.
+- Lectura de la tabla purchases funcionando sin errores.
