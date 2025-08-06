@@ -1545,3 +1545,79 @@ Resultado
 - Ajustes de configuración aplicados correctamente en HBase.
 - Conexión establecida con éxito desde Jupyter Notebook.
 - Lectura de la tabla purchases funcionando sin errores.
+
+## Consultas a los motores de bases de datos
+## 📊 Comparativa de Resultados por Base de Datos
+
+| Consulta                          | Motor     | Resultado                          | Valor / Ventas        | Tiempo (seg)   |
+|----------------------------------|-----------|------------------------------------|------------------------|----------------|
+| **Categoría más vendida**        | MongoDB   | `nan`                              | 612,202 ventas         | 8.5758         |
+|                                  | Redis     | `electronics.smartphone`           | 357,682 ventas         | 1238.2801      |
+|                                  | HBase     | `electronics.smartphone`           | 213,002 ventas         | 173.2701       |
+| **Marca con más ingresos brutos**| MongoDB   | `samsung`                          | $90,052,821.66         | 9.7873         |
+|                                  | Redis     | `samsung`                          | $90,052,821.66         | 2306.0426      |
+|                                  | HBase     | `samsung`                          | $54,047,304.62         | 110.5100       |
+| **Mes con más ventas (UTC)**     | MongoDB   | `2020-06`                          | 403,632 ventas         | 9.6747         |
+|                                  | Redis     | `2020-06`                          | 403,632 ventas         | 1224.5353      |
+|                                  | HBase     | `2020-06`                          | 211,552 ventas         | 172.2478       |
+
+![Grafico](img/tiempos_consulta_por_motor.png)
+
+## 📌 Conclusiones y Análisis de Rendimiento por Motor
+
+### 🎯 Observaciones del gráfico
+
+- **MongoDB** fue consistentemente el motor con menor tiempo de respuesta en las tres consultas clave, con tiempos inferiores a 10 segundos en todos los casos.
+- **Redis**, a pesar de su arquitectura en memoria, presentó los tiempos más altos de ejecución, particularmente en la consulta de ingresos por marca (más de 2300 segundos).
+- **HBase** mostró una latencia intermedia. Aunque fue más lento que MongoDB, superó a Redis en dos de las tres consultas.
+
+Estas diferencias pueden atribuirse a:
+
+- La optimización nativa de MongoDB para consultas agregadas y filtrado directo sobre documentos JSON.
+- Redis no está diseñado para consultas complejas; su modelo clave-valor requiere estructuras adicionales y procesamiento más intensivo en el cliente.
+- HBase, al estar orientado a escritura y procesamiento distribuido, requiere tiempo para escanear y recuperar datos, especialmente en volumen.
+
+---
+
+### 📊 Hipótesis por motor de base de datos
+
+#### MongoDB
+
+- **Hipótesis nula (H₀):**  
+  *MongoDB no es significativamente más rápido que los otros motores en las consultas evaluadas.*
+
+- **Hipótesis alternativa (H₁):**  
+  *MongoDB es significativamente más rápido que Redis y HBase en todas las consultas evaluadas.*
+
+✅ Los datos observados apoyan rechazar H₀ a favor de H₁.
+
+---
+
+#### Redis
+
+- **Hipótesis nula (H₀):**  
+  *Redis ofrece tiempos de respuesta comparables a MongoDB y HBase en consultas agregadas.*
+
+- **Hipótesis alternativa (H₁):**  
+  *Redis tiene tiempos de respuesta significativamente mayores debido a su estructura y necesidad de recorrer datos manualmente.*
+
+✅ La evidencia sugiere que Redis no está optimizado para este tipo de consultas, por lo que H₀ se rechaza a favor de H₁.
+
+---
+
+#### HBase
+
+- **Hipótesis nula (H₀):**  
+  *HBase tiene un rendimiento inferior en consultas complejas en comparación con MongoDB.*
+
+- **Hipótesis alternativa (H₁):**  
+  *HBase tiene un rendimiento intermedio, superando a Redis pero no alcanzando a MongoDB en velocidad de respuesta.*
+
+✅ Se acepta H₁ con base en los tiempos observados.
+
+---
+
+### 🧠 Reflexión final
+
+La elección del motor debe estar alineada con el tipo de consultas esperadas. MongoDB es superior para análisis rápido de datos semiestructurados; Redis requiere optimizaciones adicionales para escalar consultas complejas; HBase resulta útil cuando se espera carga de escritura masiva, pero sus lecturas deben ser cuidadosamente diseñadas.
+
