@@ -1,0 +1,51 @@
+{
+  "Laboratorio": "Laboratorio #1",
+  "Tareas": [
+    {
+      "Descripcion": "Investigar cómo montar un servidor de HBase usando un container de Docker y usarlo desde Python con alguna librería disponible."
+    },
+    {
+      "Descripcion": "Investigar cómo montar un servidor de MongoDB usando un container de Docker y usarlo desde Python con alguna librería disponible."
+    },
+    {
+      "Descripcion": "Investigar cómo montar un servidor de Redis usando un container de Docker y usarlo desde Python con alguna librería disponible."
+    },
+    {
+      "Descripcion": "Crear un script de Python que cargue un dataset de 2 millones de filas en las 3 bases de datos siguiendo el esquema de cada una."
+    },
+    {
+      "Descripcion": "Crear uno o varios scripts de Python que realicen las siguientes consultas en cada base de datos:",
+      "Consultas": [
+        "¿Cuál es la categoría más vendida?",
+        "¿Cuál marca (brand) generó más ingresos brutos?",
+        "¿Qué mes tuvo más ventas? (En UTC)"
+      ]
+    },
+    {
+      "Descripcion": "Analizar y comparar los tiempos de respuesta de cada consulta en cada base de datos."
+    },
+    {
+      "Descripcion": "Desarrollar un documento PDF con:",
+      "Contenido": [
+        "Portada",
+        "Desarrollo",
+        "Conclusiones",
+        "Bibliografía"
+      ],
+      "Detalle": [
+        "Documentar cada paso de cómo crear y manejar cada base de datos.",
+        "Documentar los resultados obtenidos durante la experimentación.",
+        "Conclusiones sobre el resultado y el proyecto."
+      ]
+    }
+  ],
+  "Entrega": {
+    "Formato": "Archivo ZIP",
+    "Contenido": [
+      "Código fuente",
+      "Documentación PDF"
+    ],
+    "LugarEntrega": "Sección de Evaluaciones"
+  },
+  "Notas": "Para cualquier duda, contactar por correo o WhatsApp."
+}
