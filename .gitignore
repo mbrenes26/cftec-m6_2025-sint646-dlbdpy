@@ -6,6 +6,7 @@
 *.tfstate.*
 *.log
 *.tfplan
+.terraform.lock.hcl
 
 # =========================
 # Credenciales y certificados
@@ -33,6 +34,8 @@ Thumbs.db
 # =========================
 *.exe
 *.dll
+*.so
+*.dylib
 *.msi
 *.bat
 *.cmd
