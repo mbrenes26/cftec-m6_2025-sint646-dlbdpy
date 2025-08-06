@@ -1,0 +1,52 @@
+name: Manage Lab VM
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Acción a realizar (start/stop/restart)'
+        required: true
+        default: 'start'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  manage-vm:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔑 Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 🖥 Manage VM
+        run: |
+          RG_NAME="rg-cftec-m62025-sint646" # Cambia si tu RG tiene otro nombre
+          VM_NAME="vm-cftec-m62025-SINT646-lab01"
+
+          case "${{ github.event.inputs.action }}" in
+            start)
+              echo "🚀 Iniciando VM..."
+              az vm start --resource-group "$RG_NAME" --name "$VM_NAME"
+              ;;
+            stop)
+              echo "🛑 Deteniendo VM..."
+              az vm deallocate --resource-group "$RG_NAME" --name "$VM_NAME"
+              ;;
+            restart)
+              echo "🔄 Reiniciando VM..."
+              az vm restart --resource-group "$RG_NAME" --name "$VM_NAME"
+              ;;
+            *)
+              echo "⚠️ Acción no válida. Usa start, stop o restart."
+              exit 1
+              ;;
+          esac
