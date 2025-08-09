@@ -1,0 +1,222 @@
+name: 03 - Start tmux JupyterLab
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_group:
+        description: "Nombre del Resource Group de la VM"
+        required: true
+        default: "rg-cftec-m62025-SINT646"
+      vm_name:
+        description: "Nombre de la VM"
+        required: true
+        default: "vm-cftec-m62025-SINT646-lab01"
+      session_name:
+        description: "Nombre de la sesión tmux"
+        required: true
+        default: "jupyterlab"
+      port:
+        description: "Puerto para JupyterLab"
+        required: true
+        default: "8888"
+      workdir:
+        description: "Directorio de trabajo (donde abrir JupyterLab)"
+        required: true
+        default: "/home/azureuser"
+      env_cmd:
+        description: "Comando para activar entorno (opcional, p.ej. 'source ~/miniconda3/etc/profile.d/conda.sh && conda activate lab')"
+        required: false
+        default: ""
+      script_path:
+        description: "Ruta en la VM para guardar el script"
+        required: true
+        default: "/home/azureuser/start_tmux-jupyterlab.sh"
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  start-jupyterlab:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔑 Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ⬆️ Publicar/Actualizar script en la VM
+        run: |
+          RG="${{ inputs.resource_group }}"
+          VM="${{ inputs.vm_name }}"
+          SCRIPT_PATH="${{ inputs.script_path }}"
+
+          # Escribimos el script en la VM (como root) y lo dejamos para azureuser
+          az vm run-command invoke \
+            -g "$RG" -n "$VM" \
+            --command-id RunShellScript \
+            --scripts '
+              set -e
+              umask 022
+              cat > '"$SCRIPT_PATH"' <<'"'EOF_SCRIPT'"'
+#!/usr/bin/env bash
+# ==========================================================
+# Script: start_tmux-jupyterlab.sh
+# Objetivo: Lanzar JupyterLab en una sesión tmux "detached"
+# Persistirá aunque cierres la sesión SSH.
+# ==========================================================
+
+set -euo pipefail
+
+SESSION_NAME="jupyterlab"
+PORT="8888"
+WORKDIR="$HOME"
+ENV_CMD=""
+DISABLE_AUTH="0"   # 1 = sin token/contraseña (solo para pruebas en redes seguras)
+LOG_DIR="$HOME/.jupyter/logs"
+LOG_FILE="\${LOG_DIR}/jupyterlab_\$(date +%Y%m%d_%H%M%S).log"
+
+usage() {
+  cat <<USAGE
+Uso: \$0 [opciones]
+  -s, --session     Nombre de la sesión tmux (por defecto: jupyterlab)
+  -p, --port        Puerto JupyterLab (por defecto: 8888)
+  -w, --workdir     Directorio de trabajo (por defecto: \$HOME)
+  -e, --env-cmd     Comando para activar entorno (opcional)
+  --no-auth         Desactiva token/contraseña (solo pruebas)
+  -h, --help        Mostrar ayuda
+Ejemplo:
+  \$0 -s jupyterlab -p 8888 -w "\$HOME" -e "source ~/miniconda3/etc/profile.d/conda.sh && conda activate lab"
+USAGE
+}
+
+# Parseo de argumentos
+while [[ \${1:-} != "" ]]; do
+  case "\$1" in
+    -s|--session)    SESSION_NAME="\$2"; shift 2 ;;
+    -p|--port)       PORT="\$2"; shift 2 ;;
+    -w|--workdir)    WORKDIR="\$2"; shift 2 ;;
+    -e|--env-cmd)    ENV_CMD="\$2"; shift 2 ;;
+    --no-auth)       DISABLE_AUTH="1"; shift 1 ;;
+    -h|--help)       usage; exit 0 ;;
+    *) echo "Opción no válida: \$1"; usage; exit 1 ;;
+  esac
+done
+
+# Utilidades
+need_cmd() { command -v "\$1" >/dev/null 2>&1; }
+
+echo ">> Verificando dependencias básicas..."
+if ! need_cmd tmux; then
+  echo "tmux no encontrado; instalando..."
+  if need_cmd apt; then
+    sudo apt-get update -y
+    sudo apt-get install -y tmux
+  else
+    echo "No se pudo instalar tmux automáticamente (apt no disponible)."
+    exit 1
+  fi
+fi
+
+if ! need_cmd python3; then
+  echo "python3 no encontrado; instalando..."
+  sudo apt-get update -y
+  sudo apt-get install -y python3 python3-pip
+fi
+
+if ! need_cmd jupyter; then
+  echo "jupyter no encontrado; instalando jupyterlab vía pip..."
+  python3 -m pip install --user --upgrade pip
+  python3 -m pip install --user jupyterlab
+  export PATH="\$HOME/.local/bin:\$PATH"
+fi
+
+mkdir -p "\$LOG_DIR"
+mkdir -p "\$WORKDIR"
+
+# Comprobar si el puerto está libre
+if ss -ltn | awk '{print $4}' | grep -q ":\$PORT\$"; then
+  echo "⚠️  El puerto \$PORT parece estar en uso. Continuando de todas formas..."
+fi
+
+# Construir comando Jupyter
+JUPYTER_CMD="jupyter lab --ip=0.0.0.0 --port=\$PORT --no-browser"
+if [[ "\$DISABLE_AUTH" == "1" ]]; then
+  JUPYTER_CMD+=" --NotebookApp.token='' --NotebookApp.password=''"
+fi
+
+# Incluir comando de entorno si existe
+FULL_CMD="bash -lc '
+  set -e
+  export PATH=\$HOME/.local/bin:\$PATH
+  ${ENV_CMD:+$ENV_CMD && }
+  cd \"\$WORKDIR\"
+  echo \"Lanzando: \$JUPYTER_CMD\"
+  (\$JUPYTER_CMD) >> \"\$LOG_FILE\" 2>&1
+'"
+
+# Lanzar en tmux (idempotente)
+if tmux has-session -t "\$SESSION_NAME" 2>/dev/null; then
+  echo "⚠️  La sesión tmux '\$SESSION_NAME' ya existe."
+  echo "   Para adjuntar: tmux attach -t \$SESSION_NAME"
+else
+  echo "🚀 Creando sesión tmux '\$SESSION_NAME' y lanzando JupyterLab..."
+  tmux new-session -d -s "\$SESSION_NAME" "\$FULL_CMD"
+  echo "✅ JupyterLab lanzado en tmux. Log: \$LOG_FILE"
+  echo "   Para adjuntar: tmux attach -t \$SESSION_NAME"
+fi
+
+echo ">> Resumen:"
+echo "   Sesión tmux : \$SESSION_NAME"
+echo "   Puerto      : \$PORT"
+echo "   Workdir     : \$WORKDIR"
+if [[ "\$DISABLE_AUTH" == "1" ]]; then
+  echo "   Auth        : DESACTIVADA (solo pruebas)"
+else
+  echo "   Auth        : Token por defecto de Jupyter (recomendado)"
+fi
+
+EOF_SCRIPT
+              chmod +x '"$SCRIPT_PATH"'
+              chown azureuser:azureuser '"$SCRIPT_PATH"'
+            '
+
+      - name: ▶️ Ejecutar script en tmux (como azureuser)
+        env:
+          RG: ${{ inputs.resource_group }}
+          VM: ${{ inputs.vm_name }}
+          SCRIPT_PATH: ${{ inputs.script_path }}
+          SESSION_NAME: ${{ inputs.session_name }}
+          PORT: ${{ inputs.port }}
+          WORKDIR: ${{ inputs.workdir }}
+          ENV_CMD: ${{ inputs.env_cmd }}
+        run: |
+          # Nota: RunCommand se ejecuta como root; usamos sudo -u para lanzar como azureuser
+          az vm run-command invoke \
+            -g "$RG" -n "$VM" \
+            --command-id RunShellScript \
+            --scripts '
+              set -e
+              sudo -u azureuser -H bash -lc \
+              "\"$SCRIPT_PATH\" -s \"'"$SESSION_NAME"'\" -p \"'"$PORT"'\" -w \"'"$WORKDIR"'\" '"$([ -n "$ENV_CMD" ] && echo "-e \"$ENV_CMD\"")"'"
+            '
+
+      - name: 📜 Mostrar último log de JupyterLab
+        env:
+          RG: ${{ inputs.resource_group }}
+          VM: ${{ inputs.vm_name }}
+        run: |
+          az vm run-command invoke \
+            -g "$RG" -n "$VM" \
+            --command-id RunShellScript \
+            --scripts '
+              sudo -u azureuser -H bash -lc "
+                ls -1t ~/.jupyter/logs/jupyterlab_*.log 2>/dev/null | head -n 1 | xargs -r tail -n 50 || echo \"(Sin logs aún)\"
+              "
+            ' \
+            --query "value[0].message" -o tsv
