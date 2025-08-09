@@ -2,6 +2,19 @@ name: Step02 - Restart Lab Services
 
 on:
   workflow_dispatch:
+    inputs:
+      app_user:
+        description: 'VM user to run Jupyter/tmux'
+        required: false
+        default: 'azureuser'
+      jupyter_port:
+        description: 'Jupyter port'
+        required: false
+        default: '8888'
+      session_name:
+        description: 'tmux session name'
+        required: false
+        default: 'jupyterlab'
 
 permissions:
   id-token: write
@@ -13,26 +26,43 @@ env:
   ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   RESOURCE_GROUP: rg-cftec-m62025-SINT646-lab01
+  VM_NAME: vm-cftec-m62025-SINT646-lab01
 
 jobs:
   restart-services:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     steps:
-      - name: 📥 Checkout repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: 🔐 Azure CLI Login
+      - name: Azure CLI Login (Service Principal)
+        shell: bash
         run: |
+          set -euo pipefail
           az login --service-principal \
-            --username $ARM_CLIENT_ID \
-            --password $ARM_CLIENT_SECRET \
-            --tenant $ARM_TENANT_ID
-          az account set --subscription $ARM_SUBSCRIPTION_ID
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
 
-      - name: 🚀 Restart Docker containers & Jupyter
+      - name: Run restart script on VM
+        shell: bash
         run: |
+          set -euo pipefail
           az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$VM_NAME" \
             --command-id RunShellScript \
-            --name vm-cftec-m62025-SINT646-lab01 \
-            --resource-group $RESOURCE_GROUP \
-            --scripts @"scripts/restart_lab_services.sh"
+            --scripts @"$GITHUB_WORKSPACE/scripts/restart_lab_services.sh" \
+            --parameters "${{ inputs.app_user }}" "${{ inputs.jupyter_port }}" "${{ inputs.session_name }}" \
+            --query "value[0].message" -o tsv
+
+      - name: Show public URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBIP="$(az vm list-ip-addresses -g "$RESOURCE_GROUP" -n "$VM_NAME" --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)"
+          echo "Public IP: ${PUBIP}"
+          echo "Jupyter URL: http://${PUBIP}:${{ inputs.jupyter_port }}"
