@@ -2,7 +2,7 @@
 variable "location" {
   description = "Ubicación donde se desplegarán los recursos en Azure"
   type        = string
-  default     = "westus2"
+  default     = "westus3"
 }
 
 # Nombre del proyecto para identificar recursos
