@@ -1,5 +1,5 @@
 resource "azurerm_resource_group" "lab" {
-  name     = "rg-cftec-m62025-SINT646-lab01"
+  name     = "rg-cftec-m62025-SINT646"
   location = var.location
 
   tags = {
