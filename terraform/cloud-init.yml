@@ -1,0 +1,30 @@
+#cloud-config
+package_update: true
+packages:
+  - tmux
+  - python3
+  - python3-pip
+  - docker.io
+  - ca-certificates
+  - curl
+
+write_files:
+  - path: /etc/profile.d/10-localbin.sh
+    permissions: '0644'
+    content: |
+      export PATH="$HOME/.local/bin:$PATH"
+
+runcmd:
+  - systemctl enable docker
+  - systemctl start docker
+  - bash -lc 'id azureuser && usermod -aG docker azureuser || true'
+  - su - azureuser -c 'python3 -m pip install --user --upgrade pip'
+  - su - azureuser -c 'python3 -m pip install --user "notebook<7"'
+  - bash -lc 'echo "export PATH=\$HOME/.local/bin:\$PATH" >> /home/azureuser/.bashrc'
+  - bash -lc 'echo "export PATH=\$HOME/.local/bin:\$PATH" >> /home/azureuser/.profile'
+  - chown azureuser:azureuser /home/azureuser/.bashrc /home/azureuser/.profile
+  - docker pull mongo:6.0
+  - docker pull mongo-express:latest
+  - docker pull redis:7.2
+  - docker pull redislabs/redisinsight:1.14.0
+  - docker pull harisekhon/hbase:latest
