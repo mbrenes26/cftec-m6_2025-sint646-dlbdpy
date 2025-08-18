@@ -1,3 +1,4 @@
+222
 # 🧪 Laboratorio 1 — Deep Learning y Big Data con Python (SINT646)
 
 Este repositorio contiene el desarrollo completo del **Laboratorio #1** del curso _Deep Learning y Big Data con Python_ de la Universidad CENFOTEC, ciclo 2025.
