@@ -18,7 +18,7 @@ on:
       ensure_kafka:
         description: "Ensure Kafka & Kafka UI (true/false)"
         required: false
-        default: "false"
+        default: "true"
       create_mysql_schema:
         description: "Create MySQL schema (true/false)"
         required: false
