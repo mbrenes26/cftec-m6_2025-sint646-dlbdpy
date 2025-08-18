@@ -15,3 +15,7 @@ variable "ssh_public_key" {
   description = "Clave pública SSH para acceso a la VM"
   type        = string
 }
+variable "my_public_ip_cidr" {
+  description = "Your public IP in CIDR format, e.g. 203.0.113.45/32"
+  type        = string
+}
