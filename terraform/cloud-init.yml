@@ -26,14 +26,27 @@ write_files:
       docker network create labnet >/dev/null 2>&1 || true
       docker rm -f kafka kafka-ui >/dev/null 2>&1 || true
 
-      get_pubip() {
+      require_cmd(){ command -v "$1" >/dev/null 2>&1; }
+
+      get_pub_ip_imds() {
+        require_cmd curl || return 1
         curl -sS -m 3 -H Metadata:true \
           "http://169.254.169.254/metadata/instance/network/interface?api-version=2021-02-01" \
-          | tr -d '\r' \
-          | grep -oE '"publicIpAddress"\s*:\s*"[^"]+"' \
-          | head -n1 | cut -d'"' -f4
+        | tr -d '\r' \
+        | grep -oE '"publicIpAddress"\s*:\s*"[^"]+"' \
+        | head -n1 | cut -d'"' -f4
       }
-      PUBIP="$(get_pubip || true)"
+      get_pub_ip_ifconfig(){ require_cmd curl || return 1; curl -sS -m 3 https://ifconfig.me || true; }
+      get_pub_ip_ipify()  { require_cmd curl || return 1; curl -sS -m 3 https://api.ipify.org || true; }
+
+      PUBIP="$(get_pub_ip_imds || true)"
+      if [[ -z "$PUBIP" || "$PUBIP" == "null" ]]; then
+        PUBIP="$(get_pub_ip_ifconfig || true)"
+      fi
+      if [[ -z "$PUBIP" || "$PUBIP" == "null" ]]; then
+        PUBIP="$(get_pub_ip_ipify || true)"
+      fi
+
       PRIVIP="$(hostname -I 2>/dev/null | awk '{print $1}')"
       ADV_IP="${PUBIP:-$PRIVIP}"
 
@@ -97,6 +110,7 @@ write_files:
       echo "Metabase en: http://127.0.0.1:3000"
 
 runcmd:
+  - mkdir -p /opt/lab/bin
   - systemctl enable docker
   - systemctl start docker
   - bash -lc 'id azureuser && usermod -aG docker azureuser || true'

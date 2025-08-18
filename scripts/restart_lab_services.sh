@@ -43,7 +43,7 @@ fi
 
 # Verificar Docker
 if ! require_cmd docker; then
-  err "Docker is not installed or not in PATH."
+  err "Docker is not installed or not in PATH. Ejecuta install_lab_prereqs.sh o revisa cloud-init."
   exit 1
 fi
 systemctl start docker >/dev/null 2>&1 || true
@@ -94,25 +94,30 @@ if [[ "$PUBIP" != "<no-public-ip>" ]]; then ADV_IP="$PUBIP"; fi
 
 # ---------------- Containers ----------------
 
+# Red dedicada para el lab
+docker network create labnet >/dev/null 2>&1 || true
+
 # MongoDB
 docker rm -f mongodb >/dev/null 2>&1 || true
 docker run -d \
   --name mongodb \
+  --network labnet \
   -p 27017:27017 \
   -e MONGO_INITDB_ROOT_USERNAME=admin \
   -e MONGO_INITDB_ROOT_PASSWORD=pass \
   --restart unless-stopped \
   mongo:6.0
 
-# Mongo Express
+# Mongo Express (conecta a 'mongodb' en la red labnet)
 docker rm -f mongo-express >/dev/null 2>&1 || true
 docker run -d \
   --name mongo-express \
+  --network labnet \
   -p 8081:8081 \
   -e ME_CONFIG_MONGODB_ADMINUSERNAME=admin \
   -e ME_CONFIG_MONGODB_ADMINPASSWORD=pass \
   -e ME_CONFIG_MONGODB_SERVER=mongodb \
-  --link mongodb:mongo \
+  -e ME_CONFIG_MONGODB_PORT=27017 \
   --restart unless-stopped \
   mongo-express:latest
 
@@ -120,6 +125,7 @@ docker run -d \
 docker rm -f redis >/dev/null 2>&1 || true
 docker run -d \
   --name redis \
+  --network labnet \
   -p 6379:6379 \
   --restart unless-stopped \
   redis:7.2
@@ -128,6 +134,7 @@ docker run -d \
 docker rm -f redisinsight >/dev/null 2>&1 || true
 docker run -d \
   --name redisinsight \
+  --network labnet \
   -p 8001:8001 \
   --restart unless-stopped \
   redislabs/redisinsight:1.14.0
@@ -136,6 +143,7 @@ docker run -d \
 docker rm -f hbase >/dev/null 2>&1 || true
 docker run -d \
   --name hbase \
+  --network labnet \
   -p 2181:2181 \
   -p 16000:16000 \
   -p 16010:16010 \
@@ -145,7 +153,6 @@ docker run -d \
   harisekhon/hbase:latest
 
 # Kafka (KRaft) y Kafka UI
-docker network create labnet >/dev/null 2>&1 || true
 docker rm -f kafka kafka-ui >/dev/null 2>&1 || true
 
 docker run -d --name kafka --network labnet \
