@@ -25,8 +25,8 @@ env:
   ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
   ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
   ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-  RESOURCE_GROUP: rg-cftec-m62025-SINT646-lab01
-  VM_NAME: vm-cftec-m62025-SINT646-lab01
+  RESOURCE_GROUP: rg-cftec-m62025-SINT646
+  VM_NAME: vm-cftec-m62025-SINT646-labs
 
 jobs:
   restart-services:

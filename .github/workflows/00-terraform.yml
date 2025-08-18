@@ -1,4 +1,4 @@
-name: 'Terraform CI/CD'
+name: 'Step00 - Terraform CI/CD'
 
 # 🛡️ Modo protegido por defecto: solo ejecución manual
 on:

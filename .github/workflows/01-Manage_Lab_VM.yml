@@ -35,8 +35,8 @@ jobs:
 
       - name: 🖥 Manage VM
         run: |
-          RG_NAME="rg-cftec-m62025-SINT646-lab01"
-          VM_NAME="vm-cftec-m62025-SINT646-lab01"
+          RG_NAME="rg-cftec-m62025-SINT646"
+          VM_NAME="vm-cftec-m62025-SINT646-labs"
 
           case "${{ github.event.inputs.action }}" in
             start)
