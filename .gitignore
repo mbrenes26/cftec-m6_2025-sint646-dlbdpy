@@ -6,28 +6,54 @@
 *.tfstate.*
 *.log
 *.tfplan
+# Nota: si quieres builds reproducibles, considera VERSIONAR .terraform.lock.hcl.
+# Si prefieres ignorarlo (como ahora), deja la linea siguiente activa:
 .terraform.lock.hcl
 
 # =========================
-# Credenciales y certificados
+# Python (venv, caches, builds)
 # =========================
-*.pem
-*.pfx
-*.cer
-*.key
-*.crt
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage*
+htmlcov/
+build/
+dist/
+*.egg-info/
+.python-version
+
+# =========================
+# Credenciales y env locales
+# =========================
+.env
+.env.*
+!.env.example
 
 # =========================
 # Archivos temporales del sistema
 # =========================
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # =========================
-# Residuos de editores
+# Residuos de editores/IDE
 # =========================
 *~
 *.swp
+.vscode/
+.idea/
+.vs/
 
 # =========================
 # Ejecutables y binarios
@@ -47,16 +73,33 @@ Thumbs.db
 *.tar
 *.gz
 *.7z
+*.bz2
+*.xz
 
 # =========================
-# Datasets y resultados experimentales
+# Datasets y resultados (locales)
 # =========================
 datasets/
+data/
 *.csv
 *.tsv
+*.jsonl
+*.parquet
+*.pkl
+*.pickle
+corpus*.txt
 
 # =========================
-# Archivos de Jupyter Notebook
+# Jupyter
 # =========================
 .ipynb_checkpoints/
 *.ipynb_save
+
+# =========================
+# Logs y temporales
+# =========================
+logs/
+*.log
+*.tmp
+*.bak
+*.orig
