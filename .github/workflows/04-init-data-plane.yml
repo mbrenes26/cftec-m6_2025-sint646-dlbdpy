@@ -1,0 +1,71 @@
+name: Step04 - Init Data Plane
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic_name:
+        description: "Kafka topic name"
+        required: false
+        default: "user-topic"
+      mysql_db:
+        description: "MySQL database name"
+        required: false
+        default: "lab"
+      ensure_extras:
+        description: "Ensure MySQL/Metabase (true/false)"
+        required: false
+        default: "true"
+      ensure_kafka:
+        description: "Ensure Kafka & Kafka UI (true/false)"
+        required: false
+        default: "false"
+      create_mysql_schema:
+        description: "Create MySQL schema (true/false)"
+        required: false
+        default: "true"
+      create_kafka_topic:
+        description: "Create Kafka topic (true/false)"
+        required: false
+        default: "true"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  RESOURCE_GROUP: rg-cftec-m62025-SINT646
+  VM_NAME: vm-cftec-m62025-SINT646-labs
+
+jobs:
+  init-data-plane:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure CLI Login (Service Principal)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az login --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
+
+      - name: Run init_data_plane.sh on VM
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts @"$GITHUB_WORKSPACE/scripts/init_data_plane.sh" \
+            --parameters "${{ inputs.topic_name }}" "${{ inputs.mysql_db }}" "${{ inputs.ensure_extras }}" "${{ inputs.ensure_kafka }}" "${{ inputs.create_mysql_schema }}" "${{ inputs.create_kafka_topic }}" \
+            --query "value[0].message" -o tsv
