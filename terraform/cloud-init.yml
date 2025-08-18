@@ -16,7 +16,7 @@ write_files:
     content: |
       export PATH="$HOME/.local/bin:$PATH"
 
-  # Helper: start Kafka (KRaft) + Kafka UI on demand
+  # Helper: start Kafka (KRaft) + Kafka UI on demand (con envs KRaft completas)
   - path: /opt/lab/bin/start_kafka.sh
     permissions: "0755"
     content: |
@@ -37,7 +37,7 @@ write_files:
         | head -n1 | cut -d'"' -f4
       }
       get_pub_ip_ifconfig(){ require_cmd curl || return 1; curl -sS -m 3 https://ifconfig.me || true; }
-      get_pub_ip_ipify()  { require_cmd curl || return 1; curl -sS -m 3 https://api.ipify.org || true; }
+      get_pub_ip_ipify(){  require_cmd curl || return 1; curl -sS -m 3 https://api.ipify.org || true; }
 
       PUBIP="$(get_pub_ip_imds || true)"
       if [[ -z "$PUBIP" || "$PUBIP" == "null" ]]; then
@@ -58,6 +58,9 @@ write_files:
         -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093 \
         -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
         -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://${ADV_IP}:9092 \
+        -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+        -e KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
+        -e KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
         -e ALLOW_PLAINTEXT_LISTENER=yes \
         --restart unless-stopped \
         bitnami/kafka:3.7
@@ -110,19 +113,18 @@ write_files:
       echo "Metabase en: http://127.0.0.1:3000"
 
 runcmd:
-  - mkdir -p /opt/lab/bin
   - systemctl enable docker
   - systemctl start docker
   - bash -lc 'id azureuser && usermod -aG docker azureuser || true'
 
-  # Jupyter (solo instalacion; arranque manual via tu workflow/script)
+  # Jupyter (instalación; arranque manual vía workflow/script)
   - su - azureuser -c 'python3 -m pip install --user --upgrade pip'
   - su - azureuser -c 'python3 -m pip install --user "notebook<7"'
   - bash -lc 'echo "export PATH=\$HOME/.local/bin:\$PATH" >> /home/azureuser/.bashrc'
   - bash -lc 'echo "export PATH=\$HOME/.local/bin:\$PATH" >> /home/azureuser/.profile'
   - chown azureuser:azureuser /home/azureuser/.bashrc /home/azureuser/.profile
 
-  # Pre-pull de imagenes necesarias (no arranca servicios)
+  # Pre-pull de imágenes necesarias (no arranca servicios)
   - docker pull mongo:6.0
   - docker pull mongo-express:latest
   - docker pull redis:7.2
