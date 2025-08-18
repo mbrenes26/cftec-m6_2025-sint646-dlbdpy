@@ -5,7 +5,7 @@
 #   $1 = APP_USER (default azureuser)
 #   $2 = JUPYTER_PORT (default 8888)
 #   $3 = TMUX_SESSION (default jupyterlab)
-#   $4 = PUBLIC_IP_OVERRIDE (opcional; si lo pasas, se usa tal cual)
+#   $4 = PUBLIC_IP_OVERRIDE (opcional)
 
 set -Eeuo pipefail
 
@@ -21,19 +21,17 @@ err()  { echo "[ERROR] $*" >&2; }
 
 trap 'err "fallo en la linea $LINENO"' ERR
 
-# Validaciones basicas
 id "$APP_USER" >/dev/null 2>&1 || { err "El usuario ${APP_USER} no existe."; exit 1; }
 
 log "User: ${APP_USER}"
 log "Jupyter port: ${JUPYTER_PORT}"
 log "tmux session: ${TMUX_SESSION}"
 
-# Asegurar tmux si falta (silencioso)
+# tmux si falta
 if ! require_cmd tmux; then
   export DEBIAN_FRONTEND=noninteractive
   if command -v apt-get >/dev/null 2>&1; then
-    apt-get update -y -qq
-    apt-get install -y -qq tmux
+    apt-get update -y -qq && apt-get install -y -qq tmux
   elif command -v dnf >/dev/null 2>&1; then
     dnf install -y -q tmux
   elif command -v yum >/dev/null 2>&1; then
@@ -41,14 +39,14 @@ if ! require_cmd tmux; then
   fi
 fi
 
-# Verificar Docker
+# docker requerido
 if ! require_cmd docker; then
-  err "Docker is not installed or not in PATH. Ejecuta install_lab_prereqs.sh o revisa cloud-init."
+  err "Docker is not installed or not in PATH."
   exit 1
 fi
 systemctl start docker >/dev/null 2>&1 || true
 
-# Asegurar curl (para deteccion de IP publica)
+# curl para deteccion de IP publica
 if ! require_cmd curl; then
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update -y -qq && apt-get install -y -qq curl
@@ -59,7 +57,6 @@ if ! require_cmd curl; then
   fi
 fi
 
-# ---------------- Descubrir IPs (antes de Kafka para advertised listeners) ----------------
 VM_PRIV_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 
 get_public_ip_imds() {
@@ -79,22 +76,15 @@ if [[ -n "$PUBLIC_IP_OVERRIDE" ]]; then
   PUBIP="$PUBLIC_IP_OVERRIDE"
 else
   PUBIP="$(get_public_ip_imds || true)"
-  if [[ -z "$PUBIP" || "$PUBIP" == "null" ]]; then
-    PUBIP="$(get_public_ip_egress_ifconfig || true)"
-  fi
-  if [[ -z "$PUBIP" || "$PUBIP" == "null" ]]; then
-    PUBIP="$(get_public_ip_egress_ipify || true)"
-  fi
+  [[ -z "$PUBIP" || "$PUBIP" == "null" ]] && PUBIP="$(get_public_ip_egress_ifconfig || true)"
+  [[ -z "$PUBIP" || "$PUBIP" == "null" ]] && PUBIP="$(get_public_ip_egress_ipify || true)"
 fi
 [[ -z "$PUBIP" || "$PUBIP" == "null" ]] && PUBIP="<no-public-ip>"
 
-# Para Kafka, usar IP publica si existe; si no, la privada
 ADV_IP="$VM_PRIV_IP"
 if [[ "$PUBIP" != "<no-public-ip>" ]]; then ADV_IP="$PUBIP"; fi
 
-# ---------------- Containers ----------------
-
-# Red dedicada para el lab
+# Red del lab
 docker network create labnet >/dev/null 2>&1 || true
 
 # MongoDB
@@ -108,7 +98,7 @@ docker run -d \
   --restart unless-stopped \
   mongo:6.0
 
-# Mongo Express (conecta a 'mongodb' en la red labnet)
+# Mongo Express
 docker rm -f mongo-express >/dev/null 2>&1 || true
 docker run -d \
   --name mongo-express \
@@ -153,19 +143,29 @@ docker run -d \
   harisekhon/hbase:latest
 
 # Kafka (KRaft) y Kafka UI
+mkdir -p /data/kafka
 docker rm -f kafka kafka-ui >/dev/null 2>&1 || true
 
 docker run -d --name kafka --network labnet \
   -p 9092:9092 \
+  -p 29092:29092 \
+  -v /data/kafka:/bitnami/kafka \
   -e KAFKA_ENABLE_KRAFT=yes \
   -e KAFKA_CFG_NODE_ID=1 \
   -e KAFKA_CFG_PROCESS_ROLES=controller,broker \
+  -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER \
   -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093 \
-  -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
-  -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://${ADV_IP}:9092 \
-  -e ALLOW_PLAINTEXT_LISTENER=yes \
+  -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,HOST://:29092,CONTROLLER://:9093 \
+  -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,HOST://127.0.0.1:29092 \
+  -e KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,HOST:PLAINTEXT \
+  -e KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
+  -e KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+  -e KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+  -e KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=1 \
   --restart unless-stopped \
   bitnami/kafka:3.7
+
+# Kafka UI con bootstrap interno
 
 docker run -d --name kafka-ui --network labnet \
   -p 9000:8080 \
@@ -174,15 +174,13 @@ docker run -d --name kafka-ui --network labnet \
   --restart unless-stopped \
   provectuslabs/kafka-ui:latest
 
-# ---------------- Jupyter en tmux ----------------
-
+# Jupyter en tmux
 log "Preparing Jupyter in tmux as ${APP_USER}"
 
 su_exec() { sudo -u "$APP_USER" -H bash -lc "$*"; }
 
 su_exec "mkdir -p ~/.jupyter"
 
-# Localizar jupyter para el usuario; instalar si falta
 JUPYTER_CMD="$(su_exec 'command -v jupyter || true')"
 if [[ -z "$JUPYTER_CMD" ]]; then
   su_exec "python3 -m pip install --user --upgrade pip"
@@ -190,24 +188,22 @@ if [[ -z "$JUPYTER_CMD" ]]; then
   JUPYTER_CMD="$(su_exec 'command -v jupyter')"
 fi
 
-# Cerrar sesion previa si existe
 if su_exec "tmux has-session -t ${TMUX_SESSION} 2>/dev/null"; then
   su_exec "tmux kill-session -t ${TMUX_SESSION}"
 fi
 
 JUPYTER_OPTS="--ip=0.0.0.0 --port=${JUPYTER_PORT} --no-browser --NotebookApp.token='' --NotebookApp.password=''"
 
-# Iniciar Jupyter dentro de tmux y log a HOME del usuario
 su_exec "tmux new -d -s ${TMUX_SESSION} '${JUPYTER_CMD} notebook ${JUPYTER_OPTS} >> ~/.jupyter/jupyterlab.log 2>&1'"
 
-# ---------------- Resumen ----------------
-
+# Resumen
 ok "Jupyter Notebook in tmux (session: ${TMUX_SESSION})"
 echo "Internal URL: http://${VM_PRIV_IP}:${JUPYTER_PORT}"
 echo "Public  URL: http://${PUBIP}:${JUPYTER_PORT}"
 echo "Attach via SSH: tmux attach -t ${TMUX_SESSION}"
 echo "Logs: ~${APP_USER}/.jupyter/jupyterlab.log"
 echo
+
 echo "Service endpoints"
 echo "-----------------"
 printf "%-22s %-8s %s\n" "Mongo Express"       "8081"  "http://${PUBIP}:8081"
@@ -215,11 +211,13 @@ printf "%-22s %-8s %s\n" "RedisInsight"        "8001"  "http://${PUBIP}:8001"
 printf "%-22s %-8s %s\n" "HBase Master UI"     "16010" "http://${PUBIP}:16010"
 printf "%-22s %-8s %s\n" "HBase RegionServer"  "16030" "http://${PUBIP}:16030"
 printf "%-22s %-8s %s\n" "Kafka UI"            "9000"  "http://${PUBIP}:9000"
-printf "%-22s %-8s %s\n" "Kafka bootstrap"     "9092"  "${ADV_IP}:9092"
+printf "%-22s %-8s %s\n" "Kafka bootstrap VM"  "29092" "127.0.0.1:29092"
+printf "%-22s %-8s %s\n" "Kafka bootstrap Int" "9092"  "kafka:9092"
 printf "%-22s %-8s %s\n" "Jupyter Notebook"    "${JUPYTER_PORT}" "http://${PUBIP}:${JUPYTER_PORT}"
 echo
+
 echo "Credentials"
 echo "-----------"
 echo "Mongo Express -> user: admin  pass: pass"
-echo "Jupyter Notebook -> sin token ni password (expuesto en 0.0.0.0). Recomendado limitar por NSG o tunel SSH."
+echo "Jupyter Notebook -> sin token ni password; limitar por NSG o tunel SSH."
 ok "Services restarted."
