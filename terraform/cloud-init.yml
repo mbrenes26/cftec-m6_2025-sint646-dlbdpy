@@ -8,26 +8,24 @@ packages:
   - ca-certificates
   - curl
 
+timezone: America/Costa_Rica
+
 write_files:
   - path: /etc/profile.d/10-localbin.sh
-    permissions: '0644'
+    permissions: "0644"
     content: |
       export PATH="$HOME/.local/bin:$PATH"
 
-  # Helper script to start Kafka (KRaft) and Kafka UI on demand
+  # Helper: start Kafka (KRaft) + Kafka UI on demand
   - path: /opt/lab/bin/start_kafka.sh
-    permissions: '0755'
+    permissions: "0755"
     content: |
       #!/usr/bin/env bash
       set -Eeuo pipefail
 
-      # Create a dedicated network for lab services
       docker network create labnet >/dev/null 2>&1 || true
-
-      # Clean previous containers if any
       docker rm -f kafka kafka-ui >/dev/null 2>&1 || true
 
-      # Detect an address to advertise (public if available, else private)
       get_pubip() {
         curl -sS -m 3 -H Metadata:true \
           "http://169.254.169.254/metadata/instance/network/interface?api-version=2021-02-01" \
@@ -39,7 +37,6 @@ write_files:
       PRIVIP="$(hostname -I 2>/dev/null | awk '{print $1}')"
       ADV_IP="${PUBIP:-$PRIVIP}"
 
-      # Start single-node Kafka in KRaft mode
       docker run -d --name kafka --network labnet \
         -p 9092:9092 \
         -e KAFKA_ENABLE_KRAFT=yes \
@@ -52,7 +49,6 @@ write_files:
         --restart unless-stopped \
         bitnami/kafka:3.7
 
-      # Kafka UI (web console) on port 9000
       docker run -d --name kafka-ui --network labnet \
         -p 9000:8080 \
         -e KAFKA_CLUSTERS_0_NAME=local \
@@ -60,24 +56,65 @@ write_files:
         --restart unless-stopped \
         provectuslabs/kafka-ui:latest
 
-      echo "Kafka (PLAINTEXT) bootstrap: ${ADV_IP}:9092"
-      echo "Kafka UI: http://${ADV_IP}:9000"
+      echo "Kafka bootstrap: ${ADV_IP}:9092"
+      echo "Kafka UI:       http://${ADV_IP}:9000"
+
+  # Helper: start MySQL on demand (root:pass, DB: lab)
+  - path: /opt/lab/bin/start_mysql.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -Eeuo pipefail
+
+      docker rm -f mysql >/dev/null 2>&1 || true
+      mkdir -p /data/mysql
+      docker run -d --name mysql \
+        -p 3306:3306 \
+        -v /data/mysql:/var/lib/mysql \
+        -e MYSQL_ROOT_PASSWORD=pass \
+        -e MYSQL_DATABASE=lab \
+        --restart unless-stopped \
+        mysql:8
+
+      echo "MySQL listo en: 127.0.0.1:3306 (root/pass, db=lab)"
+
+  # Helper: start Metabase on demand
+  - path: /opt/lab/bin/start_metabase.sh
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -Eeuo pipefail
+
+      docker rm -f metabase >/dev/null 2>&1 || true
+      mkdir -p /data/metabase
+      docker run -d --name metabase \
+        -p 3000:3000 \
+        -v /data/metabase:/metabase-data \
+        -e MB_DB_FILE=/metabase-data/metabase.db \
+        --restart unless-stopped \
+        metabase/metabase:latest
+
+      echo "Metabase en: http://127.0.0.1:3000"
 
 runcmd:
   - systemctl enable docker
   - systemctl start docker
   - bash -lc 'id azureuser && usermod -aG docker azureuser || true'
+
+  # Jupyter (solo instalacion; arranque manual via tu workflow/script)
   - su - azureuser -c 'python3 -m pip install --user --upgrade pip'
   - su - azureuser -c 'python3 -m pip install --user "notebook<7"'
   - bash -lc 'echo "export PATH=\$HOME/.local/bin:\$PATH" >> /home/azureuser/.bashrc'
   - bash -lc 'echo "export PATH=\$HOME/.local/bin:\$PATH" >> /home/azureuser/.profile'
   - chown azureuser:azureuser /home/azureuser/.bashrc /home/azureuser/.profile
-  # pre-pull existing images
+
+  # Pre-pull de imagenes necesarias (no arranca servicios)
   - docker pull mongo:6.0
   - docker pull mongo-express:latest
   - docker pull redis:7.2
   - docker pull redislabs/redisinsight:1.14.0
   - docker pull harisekhon/hbase:latest
-  # pre-pull Kafka and Kafka UI
   - docker pull bitnami/kafka:3.7
   - docker pull provectuslabs/kafka-ui:latest
+  - docker pull mysql:8
+  - docker pull metabase/metabase:latest

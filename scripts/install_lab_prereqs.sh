@@ -19,6 +19,8 @@ log(){ echo "[$(date +'%F %T')] $*"; }
 die(){ echo "ERROR: $*" >&2; exit 1; }
 have(){ command -v "$1" >/dev/null 2>&1; }
 
+trap 'echo "ERROR en linea $LINENO"; exit 1' ERR
+
 # Validaciones basicas
 id "$APP_USER" >/dev/null 2>&1 || die "El usuario ${APP_USER} no existe."
 
@@ -51,15 +53,12 @@ enable_service(){
 
 as_user(){ su - "$APP_USER" -c "$*"; }
 
-# 1) Paquetes base (incluye sudo porque restart usa sudo -u)
+# 1) Paquetes base
 log "Instalando paquetes base..."
 pkg_update
-case "$PKG" in
-  apt) pkg_install sudo tmux python3 python3-pip ca-certificates curl ;;
-  dnf|yum) pkg_install sudo tmux python3 python3-pip ca-certificates curl ;;
-esac
+pkg_install sudo tmux python3 python3-pip ca-certificates curl
 
-# 2) Docker Engine (requerido por restart)
+# 2) Docker Engine
 if ! have docker; then
   log "Instalando Docker Engine..."
   case "$PKG" in
@@ -72,13 +71,13 @@ if ! have docker; then
       ;;
   esac
   enable_service docker
-  # No es necesario para Run Command, pero util para sesiones del usuario
   getent group docker >/dev/null 2>&1 && usermod -aG docker "$APP_USER" || true
 else
   log "Docker ya instalado."
+  enable_service docker
 fi
 
-# 3) Asegurar PATH global para $HOME/.local/bin (shells no-login)
+# 3) PATH global para $HOME/.local/bin (shells no-login)
 if [ ! -f /etc/profile.d/10-localbin.sh ]; then
   echo 'export PATH="$HOME/.local/bin:$PATH"' > /etc/profile.d/10-localbin.sh
   chmod 644 /etc/profile.d/10-localbin.sh
@@ -97,9 +96,10 @@ grep -q 'export PATH=\$HOME/.local/bin:\$PATH' "$BASHRC" 2>/dev/null || \
   echo 'export PATH=$HOME/.local/bin:$PATH' >> "$BASHRC"
 grep -q 'export PATH=\$HOME/.local/bin:\$PATH' "$PROFILE" 2>/dev/null || \
   echo 'export PATH=$HOME/.local/bin:$PATH' >> "$PROFILE"
+chown "$APP_USER:$APP_USER" "$BASHRC" "$PROFILE" 2>/dev/null || true
 
 # 5) Verificacion en contexto del usuario
-log "Verificando jupyter para ${APP_USER}..."
+log "Verificando jupyter y tmux para ${APP_USER}..."
 as_user 'command -v jupyter >/dev/null || (echo "jupyter no esta en PATH" && exit 1)'
 as_user 'jupyter --version || true'
 as_user "python3 - <<'PY'
@@ -108,6 +108,9 @@ maj = notebook.__version__.split('.')[0]
 assert maj == '6', f'Se requiere notebook 6.x; encontrado {notebook.__version__}'
 print('OK notebook', notebook.__version__)
 PY"
+# Prueba rapida de tmux para el usuario
+as_user 'tmux -V >/dev/null 2>&1 || exit 1'
+as_user "tmux -L verify_$$ new -d -s verify_$$ 'sleep 1' && tmux -L verify_$$ kill-session -t verify_$$ || true"
 
 # 6) Verificacion de Docker y pre-pull de imagenes EXACTAS del restart
 log "Verificando docker..."
@@ -120,6 +123,8 @@ IMAGES=(
   "redis:7.2"
   "redislabs/redisinsight:1.14.0"
   "harisekhon/hbase:latest"
+  "bitnami/kafka:3.7"
+  "provectuslabs/kafka-ui:latest"
 )
 for img in "${IMAGES[@]}"; do
   log "docker pull $img"

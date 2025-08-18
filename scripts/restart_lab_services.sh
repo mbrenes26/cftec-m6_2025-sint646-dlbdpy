@@ -15,12 +15,14 @@ TMUX_SESSION="${3:-${TMUX_SESSION:-jupyterlab}}"
 PUBLIC_IP_OVERRIDE="${4:-}"
 
 require_cmd() { command -v "$1" >/dev/null 2>&1; }
-
 log()  { echo "[INFO] $*"; }
 ok()   { echo "[OK] $*"; }
 err()  { echo "[ERROR] $*" >&2; }
 
 trap 'err "fallo en la linea $LINENO"' ERR
+
+# Validaciones basicas
+id "$APP_USER" >/dev/null 2>&1 || { err "El usuario ${APP_USER} no existe."; exit 1; }
 
 log "User: ${APP_USER}"
 log "Jupyter port: ${JUPYTER_PORT}"
@@ -29,8 +31,14 @@ log "tmux session: ${TMUX_SESSION}"
 # Asegurar tmux si falta (silencioso)
 if ! require_cmd tmux; then
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -y -qq
-  apt-get install -y -qq tmux
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -y -qq
+    apt-get install -y -qq tmux
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y -q tmux
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y -q tmux
+  fi
 fi
 
 # Verificar Docker
@@ -39,6 +47,17 @@ if ! require_cmd docker; then
   exit 1
 fi
 systemctl start docker >/dev/null 2>&1 || true
+
+# Asegurar curl (para deteccion de IP publica)
+if ! require_cmd curl; then
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get update -y -qq && apt-get install -y -qq curl
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y -q curl
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y -q curl
+  fi
+fi
 
 # ---------------- Descubrir IPs (antes de Kafka para advertised listeners) ----------------
 VM_PRIV_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
@@ -182,7 +201,6 @@ echo "Public  URL: http://${PUBIP}:${JUPYTER_PORT}"
 echo "Attach via SSH: tmux attach -t ${TMUX_SESSION}"
 echo "Logs: ~${APP_USER}/.jupyter/jupyterlab.log"
 echo
-
 echo "Service endpoints"
 echo "-----------------"
 printf "%-22s %-8s %s\n" "Mongo Express"       "8081"  "http://${PUBIP}:8081"
