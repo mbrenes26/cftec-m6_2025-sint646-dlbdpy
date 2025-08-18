@@ -15,7 +15,14 @@ variable "ssh_public_key" {
   description = "Clave pública SSH para acceso a la VM"
   type        = string
 }
+
 variable "my_public_ip_cidr" {
-  description = "Your public IP in CIDR format, e.g. 203.0.113.45/32"
+  description = "Your public IP in CIDR format"
   type        = string
+  default     = "190.108.74.42/32"
+}
+variable "pip_dns_label" {
+  description = "Public IP DNS label (must be unique in the Azure region)"
+  type        = string
+  default     = null
 }
