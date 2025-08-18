@@ -14,6 +14,55 @@ write_files:
     content: |
       export PATH="$HOME/.local/bin:$PATH"
 
+  # Helper script to start Kafka (KRaft) and Kafka UI on demand
+  - path: /opt/lab/bin/start_kafka.sh
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -Eeuo pipefail
+
+      # Create a dedicated network for lab services
+      docker network create labnet >/dev/null 2>&1 || true
+
+      # Clean previous containers if any
+      docker rm -f kafka kafka-ui >/dev/null 2>&1 || true
+
+      # Detect an address to advertise (public if available, else private)
+      get_pubip() {
+        curl -sS -m 3 -H Metadata:true \
+          "http://169.254.169.254/metadata/instance/network/interface?api-version=2021-02-01" \
+          | tr -d '\r' \
+          | grep -oE '"publicIpAddress"\s*:\s*"[^"]+"' \
+          | head -n1 | cut -d'"' -f4
+      }
+      PUBIP="$(get_pubip || true)"
+      PRIVIP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+      ADV_IP="${PUBIP:-$PRIVIP}"
+
+      # Start single-node Kafka in KRaft mode
+      docker run -d --name kafka --network labnet \
+        -p 9092:9092 \
+        -e KAFKA_ENABLE_KRAFT=yes \
+        -e KAFKA_CFG_NODE_ID=1 \
+        -e KAFKA_CFG_PROCESS_ROLES=controller,broker \
+        -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093 \
+        -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+        -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://${ADV_IP}:9092 \
+        -e ALLOW_PLAINTEXT_LISTENER=yes \
+        --restart unless-stopped \
+        bitnami/kafka:3.7
+
+      # Kafka UI (web console) on port 9000
+      docker run -d --name kafka-ui --network labnet \
+        -p 9000:8080 \
+        -e KAFKA_CLUSTERS_0_NAME=local \
+        -e KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092 \
+        --restart unless-stopped \
+        provectuslabs/kafka-ui:latest
+
+      echo "Kafka (PLAINTEXT) bootstrap: ${ADV_IP}:9092"
+      echo "Kafka UI: http://${ADV_IP}:9000"
+
 runcmd:
   - systemctl enable docker
   - systemctl start docker
@@ -23,8 +72,12 @@ runcmd:
   - bash -lc 'echo "export PATH=\$HOME/.local/bin:\$PATH" >> /home/azureuser/.bashrc'
   - bash -lc 'echo "export PATH=\$HOME/.local/bin:\$PATH" >> /home/azureuser/.profile'
   - chown azureuser:azureuser /home/azureuser/.bashrc /home/azureuser/.profile
+  # pre-pull existing images
   - docker pull mongo:6.0
   - docker pull mongo-express:latest
   - docker pull redis:7.2
   - docker pull redislabs/redisinsight:1.14.0
   - docker pull harisekhon/hbase:latest
+  # pre-pull Kafka and Kafka UI
+  - docker pull bitnami/kafka:3.7
+  - docker pull provectuslabs/kafka-ui:latest
