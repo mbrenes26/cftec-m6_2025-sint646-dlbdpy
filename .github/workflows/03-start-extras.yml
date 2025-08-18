@@ -1,0 +1,73 @@
+name: Step03 - Start Extras (MySQL & Metabase)
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_mysql:
+        description: "Start MySQL"
+        required: false
+        default: "true"
+      start_metabase:
+        description: "Start Metabase"
+        required: false
+        default: "true"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  RESOURCE_GROUP: rg-cftec-m62025-SINT646
+  VM_NAME: vm-cftec-m62025-SINT646-labs
+
+jobs:
+  start-extras:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Azure CLI Login (Service Principal)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az login --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
+
+      - name: Start MySQL (optional)
+        if: ${{ inputs.start_mysql == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts 'sudo bash /opt/lab/bin/start_mysql.sh' \
+            --query "value[0].message" -o tsv
+
+      - name: Start Metabase (optional)
+        if: ${{ inputs.start_metabase == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts 'sudo bash /opt/lab/bin/start_metabase.sh' \
+            --query "value[0].message" -o tsv
+
+      - name: Show local access hints
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBIP="$(az vm list-ip-addresses -g "$RESOURCE_GROUP" -n "$VM_NAME" --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)"
+          echo "Public IP: ${PUBIP}"
+          echo "MySQL (mantener cerrado en NSG): 127.0.0.1:3306 (root/pass)"
+          echo "Metabase (recomendado via tunel): ssh -N -L 3000:127.0.0.1:3000 azureuser@${PUBIP}"
+          echo "Metabase URL: http://127.0.0.1:3000"
