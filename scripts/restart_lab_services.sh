@@ -1,34 +1,47 @@
 #!/usr/bin/env bash
-# Restart containers and start Jupyter inside tmux as a non-root user
+# restart_lab_services.sh
+# Reinicia contenedores y lanza Jupyter en tmux como usuario no root.
 # Params:
 #   $1 = APP_USER (default azureuser)
 #   $2 = JUPYTER_PORT (default 8888)
 #   $3 = TMUX_SESSION (default jupyterlab)
+#   $4 = PUBLIC_IP_OVERRIDE (opcional; si lo pasas, se usa tal cual)
 
 set -Eeuo pipefail
 
 APP_USER="${1:-${SUDO_USER:-azureuser}}"
 JUPYTER_PORT="${2:-${JUPYTER_PORT:-8888}}"
 TMUX_SESSION="${3:-${TMUX_SESSION:-jupyterlab}}"
-
-echo "[INFO] User: ${APP_USER}"
-echo "[INFO] Jupyter port: ${JUPYTER_PORT}"
-echo "[INFO] tmux session: ${TMUX_SESSION}"
+PUBLIC_IP_OVERRIDE="${4:-}"
 
 require_cmd() { command -v "$1" >/dev/null 2>&1; }
 
-# Ensure tmux is available (quiet install if missing)
+log()  { echo "[INFO] $*"; }
+ok()   { echo "[OK] $*"; }
+err()  { echo "[ERROR] $*" >&2; }
+
+trap 'err "fallo en la linea $LINENO"' ERR
+
+log "User: ${APP_USER}"
+log "Jupyter port: ${JUPYTER_PORT}"
+log "tmux session: ${TMUX_SESSION}"
+
+# Asegurar tmux si falta (silencioso)
 if ! require_cmd tmux; then
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -y -qq
   apt-get install -y -qq tmux
 fi
 
-# Ensure Docker is available
+# Verificar Docker
 if ! require_cmd docker; then
-  echo "[ERROR] Docker is not installed or not in PATH."
+  err "Docker is not installed or not in PATH."
   exit 1
 fi
+# Intentar activar el servicio si estuviera parado
+systemctl start docker >/dev/null 2>&1 || true
+
+# ---------------- Containers ----------------
 
 # MongoDB
 docker rm -f mongodb >/dev/null 2>&1 || true
@@ -80,33 +93,87 @@ docker run -d \
   --restart unless-stopped \
   harisekhon/hbase:latest
 
-echo "[INFO] Preparing Jupyter in tmux as ${APP_USER}"
+# ---------------- Jupyter en tmux ----------------
+
+log "Preparing Jupyter in tmux as ${APP_USER}"
 
 su_exec() { sudo -u "$APP_USER" -H bash -lc "$*"; }
 
 su_exec "mkdir -p ~/.jupyter"
 
-# Locate jupyter for the target user; install if missing
+# Localizar jupyter para el usuario; instalar si falta
 JUPYTER_CMD="$(su_exec 'command -v jupyter || true')"
 if [[ -z "$JUPYTER_CMD" ]]; then
   su_exec "python3 -m pip install --user --upgrade pip"
-  su_exec "python3 -m pip install --user notebook"
+  su_exec "python3 -m pip install --user 'notebook<7'"
   JUPYTER_CMD="$(su_exec 'command -v jupyter')"
 fi
 
-# Kill previous tmux session if any
+# Cerrar sesion previa si existe
 if su_exec "tmux has-session -t ${TMUX_SESSION} 2>/dev/null"; then
   su_exec "tmux kill-session -t ${TMUX_SESSION}"
 fi
 
 JUPYTER_OPTS="--ip=0.0.0.0 --port=${JUPYTER_PORT} --no-browser --NotebookApp.token='' --NotebookApp.password=''"
 
-# Start Jupyter inside tmux and log to user's home
+# Iniciar Jupyter dentro de tmux y log a HOME del usuario
 su_exec "tmux new -d -s ${TMUX_SESSION} '${JUPYTER_CMD} notebook ${JUPYTER_OPTS} >> ~/.jupyter/jupyterlab.log 2>&1'"
 
-VM_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-echo "[OK] Jupyter Notebook in tmux (session: ${TMUX_SESSION})"
-echo "Internal URL: http://${VM_IP}:${JUPYTER_PORT}"
+# ---------------- IPs y resumen ----------------
+
+# IP privada informativa
+VM_PRIV_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+
+# Intentar detectar IP publica
+get_public_ip_imds() {
+  require_cmd curl || return 1
+  curl -sS -m 3 -H Metadata:true \
+    "http://169.254.169.254/metadata/instance/network/interface?api-version=2021-02-01" \
+  | tr -d '\r' \
+  | grep -oE '"publicIpAddress"\s*:\s*"[^"]+"' \
+  | head -n1 \
+  | cut -d'"' -f4
+}
+get_public_ip_egress_ifconfig() {
+  require_cmd curl || return 1
+  curl -sS -m 3 https://ifconfig.me || true
+}
+get_public_ip_egress_ipify() {
+  require_cmd curl || return 1
+  curl -sS -m 3 https://api.ipify.org || true
+}
+
+PUBIP=""
+if [[ -n "$PUBLIC_IP_OVERRIDE" ]]; then
+  PUBIP="$PUBLIC_IP_OVERRIDE"
+else
+  PUBIP="$(get_public_ip_imds || true)"
+  if [[ -z "$PUBIP" || "$PUBIP" == "null" ]]; then
+    PUBIP="$(get_public_ip_egress_ifconfig || true)"
+  fi
+  if [[ -z "$PUBIP" || "$PUBIP" == "null" ]]; then
+    PUBIP="$(get_public_ip_egress_ipify || true)"
+  fi
+fi
+[[ -z "$PUBIP" || "$PUBIP" == "null" ]] && PUBIP="<no-public-ip>"
+
+ok "Jupyter Notebook in tmux (session: ${TMUX_SESSION})"
+echo "Internal URL: http://${VM_PRIV_IP}:${JUPYTER_PORT}"
+echo "Public  URL: http://${PUBIP}:${JUPYTER_PORT}"
 echo "Attach via SSH: tmux attach -t ${TMUX_SESSION}"
 echo "Logs: ~${APP_USER}/.jupyter/jupyterlab.log"
-echo "[OK] Services restarted."
+echo
+
+echo "Service endpoints"
+echo "-----------------"
+printf "%-22s %-8s %s\n" "Mongo Express"       "8081"  "http://${PUBIP}:8081"
+printf "%-22s %-8s %s\n" "RedisInsight"        "8001"  "http://${PUBIP}:8001"
+printf "%-22s %-8s %s\n" "HBase Master UI"     "16010" "http://${PUBIP}:16010"
+printf "%-22s %-8s %s\n" "HBase RegionServer"  "16030" "http://${PUBIP}:16030"
+printf "%-22s %-8s %s\n" "Jupyter Notebook"    "${JUPYTER_PORT}" "http://${PUBIP}:${JUPYTER_PORT}"
+echo
+echo "Credentials"
+echo "-----------"
+echo "Mongo Express -> user: admin  pass: pass"
+echo "Jupyter Notebook -> sin token ni password (expuesto en 0.0.0.0). Recomendado limitar por NSG o tunel SSH."
+ok "Services restarted."
