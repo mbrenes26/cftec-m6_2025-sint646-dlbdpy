@@ -16,7 +16,7 @@ write_files:
     content: |
       export PATH="$HOME/.local/bin:$PATH"
 
-  # Helper: start Kafka (KRaft) + Kafka UI on demand (listeners interno y host)
+  # Helper: start Kafka (KRaft) + Kafka UI on demand (dual listeners)
   - path: /opt/lab/bin/start_kafka.sh
     permissions: "0755"
     content: |
@@ -28,7 +28,6 @@ write_files:
 
       require_cmd(){ command -v "$1" >/dev/null 2>&1; }
 
-      # IP publica solo para mostrar URL; el listener real para UI es interno (kafka:9092)
       get_pub_ip_imds() {
         require_cmd curl || return 1
         curl -sS -m 3 -H Metadata:true \
@@ -51,24 +50,19 @@ write_files:
       PRIVIP="$(hostname -I 2>/dev/null | awk '{print $1}')"
       ADV_IP="${PUBIP:-$PRIVIP}"
 
-      # Kafka en modo KRaft, con dos listeners: interno para Docker y host local para la VM
-      mkdir -p /data/kafka
+      # Kafka KRaft con listener interno para Docker y externo para clientes
       docker run -d --name kafka --network labnet \
-        -p 9092:9092 \
-        -p 29092:29092 \
-        -v /data/kafka:/bitnami/kafka \
+        -p 9092:9092 -p 29092:29092 \
         -e KAFKA_ENABLE_KRAFT=yes \
         -e KAFKA_CFG_NODE_ID=1 \
         -e KAFKA_CFG_PROCESS_ROLES=controller,broker \
-        -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER \
         -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093 \
-        -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,HOST://:29092,CONTROLLER://:9093 \
-        -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,HOST://127.0.0.1:29092 \
-        -e KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,HOST:PLAINTEXT \
-        -e KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
-        -e KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
-        -e KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
-        -e KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+        -e KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+        -e KAFKA_CFG_LISTENERS=INTERNAL://:9092,EXTERNAL://:29092,CONTROLLER://:9093 \
+        -e KAFKA_CFG_ADVERTISED_LISTENERS=INTERNAL://kafka:9092,EXTERNAL://$ADV_IP:29092 \
+        -e KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT \
+        -e KAFKA_CFG_INTER_BROKER_LISTENER_NAME=INTERNAL \
+        -e ALLOW_PLAINTEXT_LISTENER=yes \
         --restart unless-stopped \
         bitnami/kafka:3.7
 
@@ -79,9 +73,8 @@ write_files:
         --restart unless-stopped \
         provectuslabs/kafka-ui:latest
 
-      echo "Kafka bootstrap (VM local): 127.0.0.1:29092"
-      echo "Kafka bootstrap (Docker interno): kafka:9092"
-      echo "Kafka UI: http://${ADV_IP}:9000"
+      echo "Kafka bootstrap (external): ${ADV_IP}:29092"
+      echo "Kafka UI:                  http://${ADV_IP}:9000"
 
   # Helper: start MySQL on demand (root:pass, DB: lab)
   - path: /opt/lab/bin/start_mysql.sh
@@ -126,14 +119,14 @@ runcmd:
   - systemctl start docker
   - bash -lc 'id azureuser && usermod -aG docker azureuser || true'
 
-  # Jupyter (instalacion; arranque manual via workflow/script)
+  # Jupyter (instalación; arranque manual vía workflow/script)
   - su - azureuser -c 'python3 -m pip install --user --upgrade pip'
   - su - azureuser -c 'python3 -m pip install --user "notebook<7"'
   - bash -lc 'echo "export PATH=\$HOME/.local/bin:\$PATH" >> /home/azureuser/.bashrc'
   - bash -lc 'echo "export PATH=\$HOME/.local/bin:\$PATH" >> /home/azureuser/.profile'
   - chown azureuser:azureuser /home/azureuser/.bashrc /home/azureuser/.profile
 
-  # Pre-pull de imagenes necesarias (no arranca servicios)
+  # Pre-pull de imágenes necesarias (no arranca servicios)
   - docker pull mongo:6.0
   - docker pull mongo-express:latest
   - docker pull redis:7.2
