@@ -38,8 +38,40 @@ if ! require_cmd docker; then
   err "Docker is not installed or not in PATH."
   exit 1
 fi
-# Intentar activar el servicio si estuviera parado
 systemctl start docker >/dev/null 2>&1 || true
+
+# ---------------- Descubrir IPs (antes de Kafka para advertised listeners) ----------------
+VM_PRIV_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+
+get_public_ip_imds() {
+  require_cmd curl || return 1
+  curl -sS -m 3 -H Metadata:true \
+    "http://169.254.169.254/metadata/instance/network/interface?api-version=2021-02-01" \
+  | tr -d '\r' \
+  | grep -oE '"publicIpAddress"\s*:\s*"[^"]+"' \
+  | head -n1 \
+  | cut -d'"' -f4
+}
+get_public_ip_egress_ifconfig() { require_cmd curl || return 1; curl -sS -m 3 https://ifconfig.me || true; }
+get_public_ip_egress_ipify()    { require_cmd curl || return 1; curl -sS -m 3 https://api.ipify.org || true; }
+
+PUBIP=""
+if [[ -n "$PUBLIC_IP_OVERRIDE" ]]; then
+  PUBIP="$PUBLIC_IP_OVERRIDE"
+else
+  PUBIP="$(get_public_ip_imds || true)"
+  if [[ -z "$PUBIP" || "$PUBIP" == "null" ]]; then
+    PUBIP="$(get_public_ip_egress_ifconfig || true)"
+  fi
+  if [[ -z "$PUBIP" || "$PUBIP" == "null" ]]; then
+    PUBIP="$(get_public_ip_egress_ipify || true)"
+  fi
+fi
+[[ -z "$PUBIP" || "$PUBIP" == "null" ]] && PUBIP="<no-public-ip>"
+
+# Para Kafka, usar IP publica si existe; si no, la privada
+ADV_IP="$VM_PRIV_IP"
+if [[ "$PUBIP" != "<no-public-ip>" ]]; then ADV_IP="$PUBIP"; fi
 
 # ---------------- Containers ----------------
 
@@ -93,6 +125,29 @@ docker run -d \
   --restart unless-stopped \
   harisekhon/hbase:latest
 
+# Kafka (KRaft) y Kafka UI
+docker network create labnet >/dev/null 2>&1 || true
+docker rm -f kafka kafka-ui >/dev/null 2>&1 || true
+
+docker run -d --name kafka --network labnet \
+  -p 9092:9092 \
+  -e KAFKA_ENABLE_KRAFT=yes \
+  -e KAFKA_CFG_NODE_ID=1 \
+  -e KAFKA_CFG_PROCESS_ROLES=controller,broker \
+  -e KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=1@kafka:9093 \
+  -e KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093 \
+  -e KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://${ADV_IP}:9092 \
+  -e ALLOW_PLAINTEXT_LISTENER=yes \
+  --restart unless-stopped \
+  bitnami/kafka:3.7
+
+docker run -d --name kafka-ui --network labnet \
+  -p 9000:8080 \
+  -e KAFKA_CLUSTERS_0_NAME=local \
+  -e KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092 \
+  --restart unless-stopped \
+  provectuslabs/kafka-ui:latest
+
 # ---------------- Jupyter en tmux ----------------
 
 log "Preparing Jupyter in tmux as ${APP_USER}"
@@ -119,43 +174,7 @@ JUPYTER_OPTS="--ip=0.0.0.0 --port=${JUPYTER_PORT} --no-browser --NotebookApp.tok
 # Iniciar Jupyter dentro de tmux y log a HOME del usuario
 su_exec "tmux new -d -s ${TMUX_SESSION} '${JUPYTER_CMD} notebook ${JUPYTER_OPTS} >> ~/.jupyter/jupyterlab.log 2>&1'"
 
-# ---------------- IPs y resumen ----------------
-
-# IP privada informativa
-VM_PRIV_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-
-# Intentar detectar IP publica
-get_public_ip_imds() {
-  require_cmd curl || return 1
-  curl -sS -m 3 -H Metadata:true \
-    "http://169.254.169.254/metadata/instance/network/interface?api-version=2021-02-01" \
-  | tr -d '\r' \
-  | grep -oE '"publicIpAddress"\s*:\s*"[^"]+"' \
-  | head -n1 \
-  | cut -d'"' -f4
-}
-get_public_ip_egress_ifconfig() {
-  require_cmd curl || return 1
-  curl -sS -m 3 https://ifconfig.me || true
-}
-get_public_ip_egress_ipify() {
-  require_cmd curl || return 1
-  curl -sS -m 3 https://api.ipify.org || true
-}
-
-PUBIP=""
-if [[ -n "$PUBLIC_IP_OVERRIDE" ]]; then
-  PUBIP="$PUBLIC_IP_OVERRIDE"
-else
-  PUBIP="$(get_public_ip_imds || true)"
-  if [[ -z "$PUBIP" || "$PUBIP" == "null" ]]; then
-    PUBIP="$(get_public_ip_egress_ifconfig || true)"
-  fi
-  if [[ -z "$PUBIP" || "$PUBIP" == "null" ]]; then
-    PUBIP="$(get_public_ip_egress_ipify || true)"
-  fi
-fi
-[[ -z "$PUBIP" || "$PUBIP" == "null" ]] && PUBIP="<no-public-ip>"
+# ---------------- Resumen ----------------
 
 ok "Jupyter Notebook in tmux (session: ${TMUX_SESSION})"
 echo "Internal URL: http://${VM_PRIV_IP}:${JUPYTER_PORT}"
@@ -170,6 +189,8 @@ printf "%-22s %-8s %s\n" "Mongo Express"       "8081"  "http://${PUBIP}:8081"
 printf "%-22s %-8s %s\n" "RedisInsight"        "8001"  "http://${PUBIP}:8001"
 printf "%-22s %-8s %s\n" "HBase Master UI"     "16010" "http://${PUBIP}:16010"
 printf "%-22s %-8s %s\n" "HBase RegionServer"  "16030" "http://${PUBIP}:16030"
+printf "%-22s %-8s %s\n" "Kafka UI"            "9000"  "http://${PUBIP}:9000"
+printf "%-22s %-8s %s\n" "Kafka bootstrap"     "9092"  "${ADV_IP}:9092"
 printf "%-22s %-8s %s\n" "Jupyter Notebook"    "${JUPYTER_PORT}" "http://${PUBIP}:${JUPYTER_PORT}"
 echo
 echo "Credentials"

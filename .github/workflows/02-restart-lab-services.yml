@@ -47,6 +47,21 @@ jobs:
             --tenant "$ARM_TENANT_ID"
           az account set --subscription "$ARM_SUBSCRIPTION_ID"
 
+      - name: Get VM public IP
+        id: getpip
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBIP="$(az vm list-ip-addresses \
+            -g "$RESOURCE_GROUP" -n "$VM_NAME" \
+            --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)"
+          if [[ -z "${PUBIP:-}" ]]; then
+            echo "No public IP found for $VM_NAME" >&2
+            exit 1
+          fi
+          echo "Public IP: ${PUBIP}"
+          echo "pubip=${PUBIP}" >> "$GITHUB_OUTPUT"
+
       - name: Run restart script on VM
         shell: bash
         run: |
@@ -56,13 +71,47 @@ jobs:
             --name "$VM_NAME" \
             --command-id RunShellScript \
             --scripts @"$GITHUB_WORKSPACE/scripts/restart_lab_services.sh" \
-            --parameters "${{ inputs.app_user }}" "${{ inputs.jupyter_port }}" "${{ inputs.session_name }}" \
+            --parameters "${{ inputs.app_user }}" "${{ inputs.jupyter_port }}" "${{ inputs.session_name }}" "${{ steps.getpip.outputs.pubip }}" \
             --query "value[0].message" -o tsv
 
-      - name: Show public URL
+      - name: Show service endpoints
         shell: bash
         run: |
           set -euo pipefail
-          PUBIP="$(az vm list-ip-addresses -g "$RESOURCE_GROUP" -n "$VM_NAME" --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)"
+          PUBIP="${{ steps.getpip.outputs.pubip }}"
+          JP="${{ inputs.jupyter_port }}"
+
+          endpoints=(
+            "Mongo Express|8081|http://${PUBIP}:8081"
+            "RedisInsight|8001|http://${PUBIP}:8001"
+            "HBase Master UI|16010|http://${PUBIP}:16010"
+            "HBase RegionServer UI|16030|http://${PUBIP}:16030"
+            "Kafka UI|9000|http://${PUBIP}:9000"
+            "Kafka bootstrap|9092|${PUBIP}:9092"
+            "Jupyter Notebook|${JP}|http://${PUBIP}:${JP}"
+          )
+
           echo "Public IP: ${PUBIP}"
-          echo "Jupyter URL: http://${PUBIP}:${{ inputs.jupyter_port }}"
+          echo "Service endpoints"
+          echo "-----------------"
+          for item in "${endpoints[@]}"; do
+            name="${item%%|*}"; rest="${item#*|}"
+            port="${rest%%|*}"; url="${rest##*|}"
+            echo "${name}  ${port}  ${url}"
+          done
+
+          {
+            echo "## Service endpoints"
+            echo
+            echo "| Service | Port | URL |"
+            echo "|---|---:|---|"
+            for item in "${endpoints[@]}"; do
+              name="${item%%|*}"; rest="${item#*|}"
+              port="${rest%%|*}"; url="${rest##*|}"
+              echo "| ${name} | ${port} | ${url} |"
+            done
+            echo
+            echo "Notes:"
+            echo "- Mongo Express user: admin  pass: pass"
+            echo "- Jupyter Notebook: no token/password (restrict via NSG or use SSH tunnel)."
+          } >> "$GITHUB_STEP_SUMMARY"

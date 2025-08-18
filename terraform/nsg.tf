@@ -116,3 +116,28 @@ resource "azurerm_subnet_network_security_group_association" "lab_subnet_nsg" {
   subnet_id                 = azurerm_subnet.lab_subnet.id
   network_security_group_id = azurerm_network_security_group.lab_nsg.id
 }
+  # Kafka UI - only your IP
+  security_rule {
+    name                       = "Allow-Kafka-UI-MyIP"
+    priority                   = 170
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "9000"
+    source_address_prefix      = "190.108.74.42/32"
+    destination_address_prefix = "*"
+  }
+
+  # Kafka Broker (PLAINTEXT) - only your IP
+  security_rule {
+    name                       = "Allow-Kafka-MyIP"
+    priority                   = 180
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "9092"
+    source_address_prefix      = "190.108.74.42/32"
+    destination_address_prefix = "*"
+  }
