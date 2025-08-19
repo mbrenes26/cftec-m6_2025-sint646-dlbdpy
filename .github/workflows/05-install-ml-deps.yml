@@ -39,7 +39,7 @@ jobs:
             --tenant "$ARM_TENANT_ID"
           az account set --subscription "$ARM_SUBSCRIPTION_ID"
 
-      - name: Run install script on VM (Run Command)
+      - name: Run install script on VM (ML deps)
         shell: bash
         run: |
           set -euo pipefail
@@ -51,6 +51,18 @@ jobs:
             --parameters "${{ inputs.app_user }}" \
             --query "value[0].message" -o tsv
 
+      - name: Run install script on VM (Jupyter widgets)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts @"$GITHUB_WORKSPACE/scripts/install_jupyter_widgets.sh" \
+            --parameters "${{ inputs.app_user }}" \
+            --query "value[0].message" -o tsv
+
       - name: Verify packages installed
         shell: bash
         run: |
@@ -59,5 +71,16 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --name "$VM_NAME" \
             --command-id RunShellScript \
-            --scripts "su - '${{ inputs.app_user }}' -c 'python3 -m pip show torch transformers pymongo mysql-connector-python | egrep \"Name:|Version:\" || true'" \
+            --scripts "su - '${{ inputs.app_user }}' -c 'python3 -m pip show torch transformers pymongo mysql-connector-python ipywidgets widgetsnbextension | egrep \"Name:|Version:\" || true'" \
+            --query "value[0].message" -o tsv
+
+      - name: Verify nbextensions
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts "su - '${{ inputs.app_user }}' -c 'jupyter nbextension list || true'" \
             --query "value[0].message" -o tsv

@@ -6,7 +6,7 @@ chmod +x scripts/setup_venv_01.sh
 bash scripts/setup_venv_01.sh -r requirements.txt
 
 
-source .venv/scripts/activate
+
 
 # verificar que venv este activo
 echo $VIRTUAL_ENV
@@ -23,7 +23,7 @@ python -m pip install -r requirements.txt
 
 
 
-
+source .venv/scripts/activate
 source .venv/scripts/deactivate
 
 
@@ -133,41 +133,6 @@ docker exec mysql mysql -uroot -ppass -e "SHOW DATABASES LIKE 'lab';"
 docker exec mysql mysql -uroot -ppass -e "SHOW TABLES IN lab;"
 docker exec mysql mysql -uroot -ppass -e "USE lab; SHOW TABLES LIKE 'dw_messages';"
 
-# 1) Definicion completa de la tabla
-docker exec mysql mysql -uroot -ppass -e "SHOW CREATE TABLE lab.sentiment_events\G"
-
-# 2) Columnas, tipos y defaults
-docker exec mysql mysql -uroot -ppass -e "
-SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA
-FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA='lab' AND TABLE_NAME='sentiment_events'
-ORDER BY ORDINAL_POSITION;"
-
-# 3) Indices
-docker exec mysql mysql -uroot -ppass -e "SHOW INDEX FROM lab.sentiment_events;"
-
-# 4) Chequeo de columnas MINIMAS requeridas para el DWH
-#    Requeridas: id, user_id, comment, ingest_ts, sentiment_label, sentiment_score
-docker exec mysql mysql -uroot -ppass -e "
-SELECT r.col AS missing
-FROM (
-  SELECT 'id' AS col UNION ALL
-  SELECT 'user_id' UNION ALL
-  SELECT 'comment' UNION ALL
-  SELECT 'ingest_ts' UNION ALL
-  SELECT 'sentiment_label' UNION ALL
-  SELECT 'sentiment_score'
-) AS r
-LEFT JOIN INFORMATION_SCHEMA.COLUMNS c
-  ON c.TABLE_SCHEMA='lab' AND c.TABLE_NAME='sentiment_events' AND c.COLUMN_NAME=r.col
-WHERE c.COLUMN_NAME IS NULL;"
-
-# 5) Collation/charset (opcional)
-docker exec mysql mysql -uroot -ppass -e "
-SELECT TABLE_NAME, TABLE_COLLATION
-FROM INFORMATION_SCHEMA.TABLES
-WHERE TABLE_SCHEMA='lab' AND TABLE_NAME='sentiment_events';"
-
 
 
 
@@ -202,3 +167,14 @@ for t, prob in zip(texts, probs):
     score = float(prob[idx].item())
     print(f"{t} -> {label} ({score:.3f})")
 PY
+
+
+#*************
+python3 scripts/sentiment_dl_worker.py \
+  --mongo-uri "mongodb://admin:pass@127.0.0.1:27017/?authSource=admin" \
+  --mongo-db streamdb --mongo-coll raw_messages \
+  --mysql-host 127.0.0.1 --mysql-port 3306 --mysql-user root --mysql-pass pass --mysql-db lab \
+  --batch-size 32 --max-docs 10 --poll-wait 2 --raw-json --upsert
+
+
+#**************
