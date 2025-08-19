@@ -7,6 +7,7 @@ packages:
   - docker.io
   - ca-certificates
   - curl
+  - mysql-client-core-8.0
 
 timezone: America/Costa_Rica
 
@@ -95,6 +96,7 @@ write_files:
 
       echo "MySQL listo en: 127.0.0.1:3306 (root/pass, db=lab)"
       
+  # write_files (agregar o actualizar este bloque)
   - path: /opt/lab/sql/01_init_dw.sql
     permissions: "0644"
     content: |
@@ -107,7 +109,7 @@ write_files:
         user_id          VARCHAR(64)  NOT NULL,
         comment          TEXT         NOT NULL,
         ingest_ts        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        sentiment_label  ENUM('neg','neu','pos') NOT NULL,
+        sentiment_label  ENUM('vneg','neg','neu','pos','vpos') NOT NULL,
         sentiment_score  FLOAT        NOT NULL,
         raw_json         JSON         NULL,
         INDEX idx_ingest_ts (ingest_ts DESC)

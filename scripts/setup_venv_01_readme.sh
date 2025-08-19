@@ -171,3 +171,30 @@ WHERE TABLE_SCHEMA='lab' AND TABLE_NAME='sentiment_events';"
 #    Si ligaste a loopback deberia mostrarse 127.0.0.1:3306
 ss -ltnp | grep ':3306'
 
+# Probar carga de modelos
+python3 - <<'PY'
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+import torch, torch.nn.functional as F
+
+m = "tabularisai/multilingual-sentiment-analysis"
+tok = AutoTokenizer.from_pretrained(m)
+mdl = AutoModelForSequenceClassification.from_pretrained(m)
+mdl.eval()
+
+texts = ["hola mundo", "odio esto", "me encanta este proyecto"]
+enc = tok(texts, padding=True, truncation=True, max_length=128, return_tensors="pt")
+with torch.no_grad():
+    out = mdl(**enc)
+
+logits = out.logits
+probs = F.softmax(logits, dim=-1)
+
+print("logits_shape =", tuple(logits.shape))
+print("id2label     =", mdl.config.id2label)
+
+for t, prob in zip(texts, probs):
+    idx = int(prob.argmax().item())
+    label = mdl.config.id2label.get(idx, str(idx))
+    score = float(prob[idx].item())
+    print(f"{t} -> {label} ({score:.3f})")
+PY
