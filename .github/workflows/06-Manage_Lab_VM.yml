@@ -1,4 +1,4 @@
-name: Step05 - Manage Lab VM
+name: Step06 - Manage Lab VM
 
 on:
   workflow_dispatch:
