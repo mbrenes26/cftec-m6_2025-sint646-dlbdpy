@@ -85,7 +85,7 @@ os.makedirs("/home/azureuser/corpus", exist_ok=True)
 open("/home/azureuser/corpus/corpus.txt","w",encoding="utf-8").write("\n".join(rows))
 print("WROTE", len(rows))
 PY
-#************
+: '
 azureuser@vm-cftec-m62025-SINT646-labs:~/corpus$ python - <<'PY'
 > import os, random
 > from datasets import load_dataset
@@ -108,6 +108,66 @@ Generating train split: 100%|█████████████████
 Generating test split: 100%|███████████████████████████████████████████████████████████| 498/498 [00:00<00:00, 12591.03 examples/s]
 WROTE 5000
 (.venv) azureuser@vm-cftec-m62025-SINT646-labs:~/corpus$ 
-#************
+'
 # en tu laptop, en la carpeta donde quieres el archivo
 scp azureuser@51.57.73.26:/home/azureuser/corpus/corpus.txt ./corpus.txt
+
+
+# My SQL
+# 1) Verifica que el contenedor esta corriendo
+docker ps --filter "name=^/mysql$" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+# 2) Comprueba que mysqld responde al ping
+docker exec mysql mysqladmin ping -ppass --silent && echo "OK: mysqld responde"
+
+# 3) Consulta basica dentro del contenedor
+docker exec mysql mysql -uroot -ppass -e "SELECT VERSION() AS version, 1 AS ping;"
+
+# 4) Confirma que la base 'lab' existe
+docker exec mysql mysql -uroot -ppass -e "SHOW DATABASES;"
+docker exec mysql mysql -uroot -ppass -e "SHOW DATABASES LIKE 'lab';"
+docker exec mysql mysql -uroot -ppass -e "SHOW TABLES IN lab;"
+docker exec mysql mysql -uroot -ppass -e "USE lab; SHOW TABLES LIKE 'dw_messages';"
+
+# 1) Definicion completa de la tabla
+docker exec mysql mysql -uroot -ppass -e "SHOW CREATE TABLE lab.sentiment_events\G"
+
+# 2) Columnas, tipos y defaults
+docker exec mysql mysql -uroot -ppass -e "
+SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_KEY, EXTRA
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA='lab' AND TABLE_NAME='sentiment_events'
+ORDER BY ORDINAL_POSITION;"
+
+# 3) Indices
+docker exec mysql mysql -uroot -ppass -e "SHOW INDEX FROM lab.sentiment_events;"
+
+# 4) Chequeo de columnas MINIMAS requeridas para el DWH
+#    Requeridas: id, user_id, comment, ingest_ts, sentiment_label, sentiment_score
+docker exec mysql mysql -uroot -ppass -e "
+SELECT r.col AS missing
+FROM (
+  SELECT 'id' AS col UNION ALL
+  SELECT 'user_id' UNION ALL
+  SELECT 'comment' UNION ALL
+  SELECT 'ingest_ts' UNION ALL
+  SELECT 'sentiment_label' UNION ALL
+  SELECT 'sentiment_score'
+) AS r
+LEFT JOIN INFORMATION_SCHEMA.COLUMNS c
+  ON c.TABLE_SCHEMA='lab' AND c.TABLE_NAME='sentiment_events' AND c.COLUMN_NAME=r.col
+WHERE c.COLUMN_NAME IS NULL;"
+
+# 5) Collation/charset (opcional)
+docker exec mysql mysql -uroot -ppass -e "
+SELECT TABLE_NAME, TABLE_COLLATION
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_SCHEMA='lab' AND TABLE_NAME='sentiment_events';"
+
+
+
+
+# 5) Verifica que el puerto 3306 esta en escucha
+#    Si ligaste a loopback deberia mostrarse 127.0.0.1:3306
+ss -ltnp | grep ':3306'
+
