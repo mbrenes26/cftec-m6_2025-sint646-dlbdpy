@@ -28,6 +28,13 @@ source .venv/scripts/deactivate
 
 
 #############
+# ejemplo usando un TXT exportado del dataset
+
+python send_kafka_burst.py --bootstrap 51.57.73.26:29092 --topic user-topic \
+  --clients 10 --duration 300 \
+  --text-file ./corpus.txt \
+  --min-delay 0.5 --max-delay 3.0
+
 #Ejecuta el consumer con un grupo NUEVO y commits más frecuentes
 python consumer_to_mongo.py \
   --bootstrap 51.57.73.26:29092 --topic user-topic \
@@ -36,16 +43,13 @@ python consumer_to_mongo.py \
   --group raw-writer-2 --commit-every 10
 
 
+
+
 #En otra terminal, produce algunos mensajes:
 python scripts/send_kafka_burst.py --bootstrap 51.57.73.26:29092 --topic user-topic \
   --clients 10 --duration 120 --min-delay 0.5 --max-delay 3
 
-# ejemplo usando un TXT exportado del dataset
 
-python send_kafka_burst.py --bootstrap 51.57.73.26:29092 --topic user-topic \
-  --clients 10 --duration 300 \
-  --text-file ./corpus.txt \
-  --min-delay 0.5 --max-delay 3.0
 
 
   

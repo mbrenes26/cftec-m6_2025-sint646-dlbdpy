@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # scripts/init_data_plane.sh
 # Inicializa la data plane del lab de forma idempotente.
+# Corrige la creacion de tabla MySQL: usa lab.dw_messages (5 clases de sentimiento).
 
 set -Eeuo pipefail
 
@@ -34,9 +35,7 @@ wait_for_kafka(){
   local start now
   start=$(date +%s)
   while true; do
-    # Debe estar en running
     if [[ "$(container_status kafka)" == "running" ]]; then
-      # Probar un comando ligero
       if docker exec kafka /opt/bitnami/kafka/bin/kafka-topics.sh \
           --bootstrap-server localhost:9092 --list >/dev/null 2>&1; then
         return 0
@@ -87,25 +86,35 @@ else
   log "ENSURE_KAFKA=false (omitido)"
 fi
 
-# 3) Esquema MySQL
+# 3) Esquema MySQL (tabla correcta: dw_messages)
 if [[ "${CREATE_MYSQL_SCHEMA}" == "true" ]]; then
   log "creando/verificando esquema MySQL en DB=${MYSQL_DB}..."
   docker ps --format '{{.Names}}' | grep -qx mysql || { err "mysql no esta corriendo"; exit 1; }
   docker exec -i mysql mysql -uroot -ppass <<SQL
-CREATE DATABASE IF NOT EXISTS ${MYSQL_DB};
+CREATE DATABASE IF NOT EXISTS ${MYSQL_DB} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE ${MYSQL_DB};
-CREATE TABLE IF NOT EXISTS sentiment_events (
-  id_mongo VARCHAR(64),
-  ts DATETIME,
-  user_id VARCHAR(64),
-  text TEXT,
-  label VARCHAR(16),
-  p_negative FLOAT,
-  p_neutral  FLOAT,
-  p_positive FLOAT
+
+-- Tabla DWH con 5 clases: vneg,neg,neu,pos,vpos
+CREATE TABLE IF NOT EXISTS dw_messages (
+  id               VARCHAR(64)  NOT NULL PRIMARY KEY,
+  user_id          VARCHAR(64)  NOT NULL,
+  comment          TEXT         NOT NULL,
+  ingest_ts        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  sentiment_label  ENUM('vneg','neg','neu','pos','vpos') NOT NULL,
+  sentiment_score  FLOAT        NOT NULL,
+  raw_json         JSON         NULL,
+  INDEX idx_ingest_ts (ingest_ts DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Crear indice por tiempo si faltara (idempotente via SQL dinamico)
+SET @idx_exists := (
+  SELECT COUNT(1) FROM information_schema.statistics
+  WHERE table_schema='${MYSQL_DB}' AND table_name='dw_messages' AND index_name='idx_ingest_ts'
 );
+SET @sql := IF(@idx_exists=0, 'CREATE INDEX idx_ingest_ts ON dw_messages (ingest_ts DESC);', 'SELECT 1');
+PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 SQL
-  ok "esquema MySQL verificado en DB=${MYSQL_DB}"
+  ok "esquema MySQL verificado en DB=${MYSQL_DB} (tabla dw_messages)"
 else
   log "CREATE_MYSQL_SCHEMA=false (omitido)"
 fi
@@ -114,7 +123,6 @@ fi
 if [[ "${CREATE_KAFKA_TOPIC}" == "true" ]]; then
   log "creando/verificando topico Kafka: ${TOPIC}..."
   docker ps --format '{{.Names}}' | grep -qx kafka || { err "kafka no esta corriendo"; exit 1; }
-  # Esperar readiness
   if ! wait_for_kafka 240; then
     err "Kafka no estuvo listo en el tiempo esperado. Logs recientes:"
     docker logs --tail 120 kafka >&2 || true
