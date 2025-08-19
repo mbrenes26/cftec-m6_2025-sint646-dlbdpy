@@ -1,0 +1,5 @@
+kafka-python
+requests
+datasets<4.0.0
+pyarrow
+pymongo

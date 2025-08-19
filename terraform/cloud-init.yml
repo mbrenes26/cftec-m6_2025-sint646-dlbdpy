@@ -94,6 +94,20 @@ write_files:
         mysql:8
 
       echo "MySQL listo en: 127.0.0.1:3306 (root/pass, db=lab)"
+  - path: /opt/lab/sql/01_init_dw.sql
+    permissions: "0644"
+    content: |
+      SET NAMES utf8mb4;
+      CREATE TABLE IF NOT EXISTS dw_messages (
+        id               VARCHAR(64)  NOT NULL PRIMARY KEY,
+        user_id          VARCHAR(64)  NOT NULL,
+        comment          TEXT         NOT NULL,
+        ingest_ts        DATETIME     NOT NULL,
+        sentiment_label  ENUM('neg','neu','pos') NOT NULL,
+        sentiment_score  FLOAT        NOT NULL,
+        raw_json         JSON         NULL,
+        INDEX idx_ingest_ts (ingest_ts DESC)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
   # Helper: start Metabase on demand
   - path: /opt/lab/bin/start_metabase.sh
