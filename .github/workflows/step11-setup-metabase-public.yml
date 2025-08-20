@@ -151,21 +151,27 @@ jobs:
             --query "value[0].message" -o tsv
 
 
-      - name: Seed Metabase via API (runs on VM, local URL; args sin espacios)
+      - name: Seed Metabase via API (idempotente, usa inputs y pass resuelta)
         shell: bash
         run: |
           set -euo pipefail
-          ADMIN_EMAIL="admin@example.com"
+          ADMIN_EMAIL="${{ inputs.admin_email }}"
           ADMIN_NAME="Admin_User"
           MB_URL="http://127.0.0.1:3000"
 
-          # credenciales MySQL para Metabase (usuario nativo)
-          DB_HOST="mysql"; DB_PORT="3306"; DB_NAME="lab"; DB_USER="metabase"; DB_PASS="mb_pass_123"
-          DB_DISPLAY="DWH"
-          DASH_TITLE="Sentiment_Streaming_Kafka_Mongo_DL_MySQL"
+          # Usa la pass resuelta en el paso anterior (o la del input por defecto)
+          MB_PASS="${{ steps.mbpass.outputs.pass }}"
 
-          # password robusto para Metabase (o usa tu Secret)
-          MB_PASS="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 16)"
+          # Credenciales MySQL para Metabase (usuario nativo creado antes)
+          DB_HOST="mysql"
+          DB_PORT="3306"
+          DB_NAME="lab"
+          DB_USER="metabase"
+          DB_PASS="mb_pass_123"
+
+          # Nombre logico de la conexion en Metabase y titulo del dashboard
+          DB_DISPLAY="${{ inputs.db_display_name }}"
+          DASH_TITLE="Sentiment_Streaming_Kafka_Mongo_DL_MySQL"
 
           az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" \
