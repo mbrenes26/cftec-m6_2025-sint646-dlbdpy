@@ -210,19 +210,19 @@ jobs:
             --query "value[0].message" -o tsv
 
       - name: Show Jupyter URL with token
+        id: jptok
         shell: bash
         run: |
           set -euo pipefail
           PUBIP="${{ steps.getpip.outputs.pubip }}"
-          az vm run-command invoke \
+          URL="$(az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
-            --scripts '
-              set -eu
-              su - "azureuser" -c "jupyter notebook list || true"
-            ' \
+            --scripts 'set -eu; su - "azureuser" -c "jupyter notebook list || true"' \
             --query "value[0].message" -o tsv \
-          | sed "s#http://0\.0\.0\.0#http://${PUBIP}#g"
+            | sed "s#http://0\.0\.0\.0#http://${PUBIP}#g" \
+            | awk "/http/{print \$1; exit}")"
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
 
 
       - name: Ensure mysql/metabase in labnet
@@ -246,20 +246,38 @@ jobs:
             --query "value[0].message" -o tsv
 
 
-      - name: Show service endpoints (public IP; requiere NSG)
+      - name: Show service endpoints (public IP; incluye token de Jupyter)
         shell: bash
         run: |
-          set -eu
+          set -euo pipefail
           PUBIP="${{ steps.getpip.outputs.pubip }}"
           JP="${{ inputs.jupyter_port }}"
+          APP_USER="${{ inputs.app_user }}"
+
+          # Obtener URL con token desde la VM
+          JUPY_URL="$(
+            az vm run-command invoke \
+              --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+              --command-id RunShellScript \
+              --scripts 'set -eu; su - "'"$APP_USER"'" -c "jupyter notebook list || true"' \
+              --query "value[0].message" -o tsv \
+            | sed -E "s#http://(0\.0\.0\.0|127\.0\.0\.1)#http://${PUBIP}#g" \
+            | awk "/http/{print \$1; exit}" \
+            || true
+          )"
+          if [[ -z "${JUPY_URL:-}" ]]; then
+            JUPY_URL="http://${PUBIP}:${JP}"
+          fi
+
           endpoints=(
             "Kafka UI|9000|http://${PUBIP}:9000"
             "Kafka bootstrap|29092|${PUBIP}:29092"
             "MongoDB|27017|${PUBIP}:27017"
             "Mongo Express|8081|http://${PUBIP}:8081"
             "Metabase|3000|http://${PUBIP}:3000"
-            "Jupyter Notebook|${JP}|http://${PUBIP}:${JP}"
+            "Jupyter Notebook (token)|${JP}|${JUPY_URL}"
           )
+
           {
             echo "## Service endpoints (public, restringidos por NSG)"
             echo
@@ -275,4 +293,5 @@ jobs:
             echo "- Kafka/MySQL/Metabase se inician via helpers definidos en cloud-init."
             echo "- MySQL puede quedar accesible en 0.0.0.0:3306 segun helper; controla el acceso en el NSG (recomendado: no abrir 3306)."
             echo "- Para Mongo/Mongo Express no hay helpers en cloud-init; se arrancan aqui con docker run."
+            echo "- Jupyter se muestra con URL de acceso directo incluyendo token si esta disponible."
           } >> "$GITHUB_STEP_SUMMARY"
