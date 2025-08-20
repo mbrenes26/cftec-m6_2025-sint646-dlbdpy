@@ -1,266 +1,261 @@
-#!/usr/bin/env bash
-# Configura Metabase y crea 3 visualizaciones + dashboard (idempotente).
-# Requiere: docker, curl, python3. Usa helpers /opt/lab/bin/start_*.sh si existen.
+#!/usr/bin/env sh
+# scripts/setup_metabase_and_seed.sh
+# Idempotente. Inicializa Metabase (admin), agrega DB MySQL, crea 3 cards y un dashboard.
+# Argumentos (en este orden):
+#  1 ADMIN_EMAIL
+#  2 ADMIN_PASS
+#  3 ADMIN_NAME            (usar underscores en lugar de espacios al invocar; aqui se vuelven espacios)
+#  4 MB_URL                (ej: http://127.0.0.1:3000)
+#  5 DB_HOST               (ej: mysql)
+#  6 DB_PORT               (ej: 3306)
+#  7 DB_NAME               (ej: lab)
+#  8 DB_USER               (ej: root)
+#  9 DB_PASS               (ej: pass)
+# 10 DB_DISPLAY            (nombre logico en Metabase; se usa tal cual)
+# 11 DASH_TITLE            (usar underscores; aqui se vuelven espacios)
 
 set -eu
 
-# Parametros
-ADMIN_EMAIL="${1:-admin@example.local}"
-ADMIN_PASS="${2:-Metabase!123}"            # PASAR POR SECRETO EN EL ACTION
-ADMIN_NAME="${3:-Admin User}"
-MB_URL="${4:-http://127.0.0.1:3000}"
+# -------------------------------
+# Args
+# -------------------------------
+ADMIN_EMAIL="${1:?arg1 ADMIN_EMAIL requerido}"
+ADMIN_PASS="${2:?arg2 ADMIN_PASS requerido}"
+# Convierto underscores a espacios para campos "bonitos"
+ADMIN_NAME_RAW="${3:?arg3 ADMIN_NAME requerido}"
+MB_URL="${4:?arg4 MB_URL requerido}"
+DB_HOST="${5:?arg5 DB_HOST requerido}"
+DB_PORT="${6:?arg6 DB_PORT requerido}"
+DB_NAME="${7:?arg7 DB_NAME requerido}"
+DB_USER="${8:?arg8 DB_USER requerido}"
+DB_PASS="${9:?arg9 DB_PASS requerido}"
+DB_DISPLAY="${10:?arg10 DB_DISPLAY requerido}"
+DASH_TITLE_RAW="${11:?arg11 DASH_TITLE requerido}"
 
-# Conexion a MySQL (DWH)
-DB_HOST="${5:-mysql}"                      # nombre del contenedor, misma red
-DB_PORT="${6:-3306}"
-DB_NAME="${7:-lab}"
-DB_USER="${8:-root}"
-DB_PASS="${9:-pass}"
-DB_DISPLAY_NAME="${10:-DWH}"
+ADMIN_NAME=$(printf %s "$ADMIN_NAME_RAW" | tr '_' ' ')
+DASH_TITLE=$(printf %s "$DASH_TITLE_RAW" | tr '_' ' ')
 
-DASHBOARD_NAME="${11:-Sentiment Streaming (Kafka->Mongo->DL->MySQL)}"
+# -------------------------------
+# Utils
+# -------------------------------
+TMPDIR="${TMPDIR:-/tmp}"
+RESP_BODY="$TMPDIR/mb_resp_body.$$"
+RESP_CODE="$TMPDIR/mb_resp_code.$$"
 
-log(){ echo "[$(date +'%F %T')] $*"; }
-err(){ echo "ERROR: $*" >&2; }
-have(){ command -v "$1" >/dev/null 2>&1; }
+cleanup() {
+  rm -f "$RESP_BODY" "$RESP_CODE" 2>/dev/null || true
+}
+trap cleanup EXIT
 
-trap 'err "fallo en la linea $LINENO"' ERR
+die() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
 
-# 0) Pre-chequeos
-have docker || { err "docker no esta en PATH"; exit 1; }
-have curl   || { err "curl no esta en PATH"; exit 1; }
-have python3|| { err "python3 no esta en PATH"; exit 1; }
+jescape() {
+  # Escapa string para JSON (sin jq)
+  # - backslash
+  # - comillas dobles
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
 
-# 1) Asegurar MySQL y Metabase (helpers existentes)
-if [[ -x /opt/lab/bin/start_mysql.sh ]]; then
-  bash /opt/lab/bin/start_mysql.sh
-fi
-if [[ -x /opt/lab/bin/start_metabase.sh ]]; then
-  bash /opt/lab/bin/start_metabase.sh
-else
-  # Fallback directo si no hubiese helper
-  docker rm -f metabase >/dev/null 2>&1 || true
-  mkdir -p /data/metabase
-  docker run -d --name metabase \
-    -p 3000:3000 \
-    -v /data/metabase:/metabase-data \
-    -e MB_DB_FILE=/metabase-data/metabase.db \
-    --restart unless-stopped \
-    metabase/metabase:latest
-fi
+# curl_json METHOD PATH [DATA]
+# Deja:
+#  - cuerpo en $RESP_BODY
+#  - codigo http en $RESP_CODE
+curl_json() {
+  method="$1"; path="$2"; data="${3:-}"
+  url="$MB_URL$path"
+  if [ -n "$data" ]; then
+    # data ya debe venir como JSON
+    curl -sS -m 10 -w '%{http_code}' -o "$RESP_BODY" \
+      -H 'Content-Type: application/json' \
+      -X "$method" "$url" --data "$data" > "$RESP_CODE" || true
+  else
+    curl -sS -m 10 -w '%{http_code}' -o "$RESP_BODY" \
+      -H 'Content-Type: application/json' \
+      -X "$method" "$url" > "$RESP_CODE" || true
+  fi
+}
 
-# 2) Esperar Metabase
-wait_up(){
-  local url="$1" timeout="${2:-180}" start now
+# curl_json_auth METHOD PATH TOKEN [DATA]
+curl_json_auth() {
+  method="$1"; path="$2"; token="$3"; data="${4:-}"
+  url="$MB_URL$path"
+  if [ -n "$data" ]; then
+    curl -sS -m 15 -w '%{http_code}' -o "$RESP_BODY" \
+      -H 'Content-Type: application/json' \
+      -H "X-Metabase-Session: $token" \
+      -X "$method" "$url" --data "$data" > "$RESP_CODE" || true
+  else
+    curl -sS -m 15 -w '%{http_code}' -o "$RESP_BODY" \
+      -H 'Content-Type: application/json' \
+      -H "X-Metabase-Session: $token" \
+      -X "$method" "$url" > "$RESP_CODE" || true
+  fi
+}
+
+# get_json_value FILE KEY   -> imprime valor si existe, sino vacio
+get_json_value() {
+  file="$1"; key="$2"
+  python3 - "$file" "$key" <<'PY' || true
+import sys, json
+fn, key = sys.argv[1], sys.argv[2]
+try:
+    with open(fn, 'r', encoding='utf-8') as f:
+        s=f.read().strip()
+        if not s:
+            print("")
+            sys.exit(0)
+        obj=json.loads(s)
+        # soporta claves con guion bajo o medio
+        if key in obj: print(obj.get(key,"")); sys.exit(0)
+        alt = key.replace('_','-')
+        if alt in obj: print(obj.get(alt,"")); sys.exit(0)
+        # buscar recursivo superficial
+        if isinstance(obj, dict):
+            for k,v in obj.items():
+                if isinstance(v, dict) and key in v:
+                    print(v.get(key,"")); sys.exit(0)
+        print("")
+except Exception:
+    print("")
+PY
+}
+
+# valida que archivo tenga JSON valido
+ensure_json_or_die() {
+  f="$1"; ctx="$2"
+  python3 - "$f" <<'PY' || ( echo "Respuesta no JSON en: $ctx" >&2; exit 1 )
+import sys, json
+fn=sys.argv[1]
+s=open(fn,'r',encoding='utf-8').read().strip()
+if s:
+    json.loads(s)
+PY
+}
+
+# -------------------------------
+# 0) Espera rapida (por si no lo hizo el workflow)
+# -------------------------------
+# health = 200 -> listo
+curl_json GET "/api/health"
+code=$(cat "$RESP_CODE")
+if [ "$code" != "200" ]; then
+  echo "[info] esperando Metabase en $MB_URL ..."
   start=$(date +%s)
-  while true; do
-    if curl -fsS "$url" >/dev/null 2>&1; then return 0; fi
-    now=$(date +%s); (( now-start > timeout )) && return 1
+  while :; do
+    curl_json GET "/api/health"
+    code=$(cat "$RESP_CODE")
+    [ "$code" = "200" ] && break
+    now=$(date +%s)
+    [ $((now-start)) -ge 240 ] && die "Metabase no listo tras 240s (code=$code)"
     sleep 3
   done
-}
-log "esperando Metabase en ${MB_URL} ..."
-wait_up "${MB_URL}/api/session/properties" 300 || { err "Metabase no respondio a tiempo"; exit 1; }
+fi
+echo "[ok] /api/health 200"
 
-# 3) Descubrir estado de setup
-props="$(curl -fsS "${MB_URL}/api/session/properties")"
-is_setup="$(printf '%s' "$props" | python3 - <<'PY'
-import sys,json
-d=json.load(sys.stdin)
-val=d.get("is_setup", d.get("setup-done", d.get("setup_done", False)))
-print("true" if bool(val) else "false")
-PY
-)"
-setup_token="$(printf '%s' "$props" | python3 - <<'PY'
-import sys,json
-d=json.load(sys.stdin)
-print(d.get("setup_token", d.get("setup-token","")))
-PY
-)"
+# -------------------------------
+# 1) Detectar si ya esta configurado
+# -------------------------------
+curl_json GET "/api/session/properties"
+# puede ser JSON o vacio si algo raro; verifico cuando lo necesite
+SETUP_TOKEN="$(get_json_value "$RESP_BODY" 'setup_token')"
+[ -z "$SETUP_TOKEN" ] && SETUP_TOKEN="$(get_json_value "$RESP_BODY" 'setup-token' || true)"
 
-MB_SESSION=""
+SESSION_ID=""
 
-# 4) Setup inicial o login
-if [[ "$is_setup" == "false" ]]; then
-  log "Metabase sin configurar. Ejecutando /api/setup ..."
-  payload="$(python3 - <<PY
-import json, os
-print(json.dumps({
-  "token": os.environ["SETUP_TOKEN"],
-  "user": {
-    "first_name": os.environ["ADMIN_NAME"].split(" ")[0],
-    "last_name": "Admin",
-    "email": os.environ["ADMIN_EMAIL"],
-    "password": os.environ["ADMIN_PASS"],
-    "site_name": "Sentiment Dashboard"
-  },
-  "prefs": { "allow_tracking": False },
-  "database": {
-    "engine": "mysql",
-    "name": os.environ["DB_DISPLAY_NAME"],
-    "details": {
-      "host": os.environ["DB_HOST"],
-      "port": int(os.environ["DB_PORT"]),
-      "db":   os.environ["DB_NAME"],
-      "user": os.environ["DB_USER"],
-      "password": os.environ["DB_PASS"],
-      "ssl": False
-    },
-    "is_full_sync": True,
-    "is_on_demand": True
-  }
-}))
-PY
-)"
-  SETUP_TOKEN="$setup_token" ADMIN_NAME="$ADMIN_NAME" ADMIN_EMAIL="$ADMIN_EMAIL" ADMIN_PASS="$ADMIN_PASS" \
-  DB_DISPLAY_NAME="$DB_DISPLAY_NAME" DB_HOST="$DB_HOST" DB_PORT="$DB_PORT" DB_NAME="$DB_NAME" DB_USER="$DB_USER" DB_PASS="$DB_PASS" \
-  curl -fsS -X POST "${MB_URL}/api/setup" -H "Content-Type: application/json" -d "$payload" >/dev/null
+if [ -n "$SETUP_TOKEN" ]; then
+  # Requiere setup
+  echo "[info] instancia sin configurar; realizando /api/setup"
+  FN="$(jescape "$ADMIN_NAME")"
+  EM="$(jescape "$ADMIN_EMAIL")"
+  PW="$(jescape "$ADMIN_PASS")"
+  SN="$(jescape 'Lab')"
+  TK="$(jescape "$SETUP_TOKEN")"
 
-  # Iniciar sesion
-  MB_SESSION="$(curl -fsS -X POST "${MB_URL}/api/session" -H "Content-Type: application/json" \
-    -d "{\"username\":\"${ADMIN_EMAIL}\",\"password\":\"${ADMIN_PASS}\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')"
-  log "setup completo y sesion creada."
+  payload='{"token":"'"$TK"'","user":{"first_name":"'"$FN"'","last_name":"","email":"'"$EM"'","password":"'"$PW"'"},"preferences":{"site_name":"'"$SN"'"}}'
+  curl_json POST "/api/setup" "$payload"
+  code=$(cat "$RESP_CODE")
+  [ "$code" = "200" ] || { echo "Respuesta /api/setup (code=$code):"; cat "$RESP_BODY"; die "/api/setup fallo"; }
+  ensure_json_or_die "$RESP_BODY" "/api/setup"
+  SESSION_ID="$(get_json_value "$RESP_BODY" 'id')"
+  [ -z "$SESSION_ID" ] && die "No se obtuvo session id tras /api/setup"
+  echo "[ok] setup completado; session=$SESSION_ID"
 else
-  log "Metabase ya configurado. Iniciando sesion ..."
-  MB_SESSION="$(curl -fsS -X POST "${MB_URL}/api/session" -H "Content-Type: application/json" \
-    -d "{\"username\":\"${ADMIN_EMAIL}\",\"password\":\"${ADMIN_PASS}\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')"
-  log "sesion OK."
+  # Ya configurado -> login
+  echo "[info] instancia ya configurada; realizando login /api/session"
+  EM="$(jescape "$ADMIN_EMAIL")"
+  PW="$(jescape "$ADMIN_PASS")"
+  payload='{"username":"'"$EM"'","password":"'"$PW"'"}'
+  curl_json POST "/api/session" "$payload"
+  code=$(cat "$RESP_CODE")
+  [ "$code" = "200" ] || { echo "Respuesta /api/session (code=$code):"; cat "$RESP_BODY"; die "login fallo"; }
+  ensure_json_or_die "$RESP_BODY" "/api/session"
+  SESSION_ID="$(get_json_value "$RESP_BODY" 'id')"
+  [ -z "$SESSION_ID" ] && die "No se obtuvo session id tras /api/session"
+  echo "[ok] login; session=$SESSION_ID"
 fi
 
-api_get(){ curl -fsS -H "X-Metabase-Session: ${MB_SESSION}" "$@"; }
-api_post(){ curl -fsS -X POST -H "X-Metabase-Session: ${MB_SESSION}" -H "Content-Type: application/json" "$@"; }
+# -------------------------------
+# 2) Crear conexion a MySQL si no existe
+# -------------------------------
+curl_json_auth GET "/api/database" "$SESSION_ID"
+code=$(cat "$RESP_CODE")
+[ "$code" = "200" ] || { echo "Respuesta /api/database (GET) code=$code:"; cat "$RESP_BODY"; die "listar DBs fallo"; }
 
-# 5) Asegurar base de datos DWH (por nombre)
-db_id="$(api_get "${MB_URL}/api/database" | python3 - <<'PY'
-import sys, json, os
-name=os.environ["DB_DISPLAY_NAME"]
-dbs=json.load(sys.stdin)
-for d in dbs:
-  if d.get("name")==name:
-    print(d.get("id")); break
+# buscar por nombre
+DB_ID="$(python3 - "$RESP_BODY" "$DB_DISPLAY" <<'PY' || true
+import sys, json
+fn, name = sys.argv[1], sys.argv[2]
+try:
+    arr=json.loads(open(fn,'r',encoding='utf-8').read())
+    for d in arr:
+        if isinstance(d, dict) and d.get('name')==name:
+            print(d.get('id',''))
+            break
+except Exception:
+    pass
 PY
 )"
-if [[ -z "${db_id:-}" ]]; then
-  log "agregando base ${DB_DISPLAY_NAME} -> ${DB_HOST}:${DB_PORT}/${DB_NAME}"
-  payload="$(python3 - <<PY
-import json, os
-print(json.dumps({
-  "engine":"mysql",
-  "name":os.environ["DB_DISPLAY_NAME"],
-  "details":{
-    "host":os.environ["DB_HOST"],
-    "port":int(os.environ["DB_PORT"]),
-    "db":os.environ["DB_NAME"],
-    "user":os.environ["DB_USER"],
-    "password":os.environ["DB_PASS"],
-    "ssl":False
+if [ -z "$DB_ID" ]; then
+  echo "[info] creando conexion MySQL '${DB_DISPLAY}'"
+  # payload para motor mysql
+  # ssl false; ajusta si necesitas
+  payload=$(cat <<JSON
+{
+  "engine": "mysql",
+  "name": "$(jescape "$DB_DISPLAY")",
+  "details": {
+    "host": "$(jescape "$DB_HOST")",
+    "port": $DB_PORT,
+    "dbname": "$(jescape "$DB_NAME")",
+    "user": "$(jescape "$DB_USER")",
+    "password": "$(jescape "$DB_PASS")",
+    "ssl": false
   },
-  "is_full_sync": True,
-  "is_on_demand": True
-}))
-PY
-)"
-  db_id="$(api_post "${MB_URL}/api/database" -d "$payload" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')"
-  log "creada database id=${db_id}"
+  "is_full_sync": true,
+  "is_on_demand": false,
+  "schedules": {}
+}
+JSON
+)
+  curl_json_auth POST "/api/database" "$SESSION_ID" "$payload"
+  code=$(cat "$RESP_CODE")
+  [ "$code" = "200" ] || [ "$code" = "201" ] || { echo "Respuesta /api/database (POST) code=$code:"; cat "$RESP_BODY"; die "crear DB fallo"; }
+  ensure_json_or_die "$RESP_BODY" "/api/database POST"
+  DB_ID="$(get_json_value "$RESP_BODY" 'id')"
+  [ -z "$DB_ID" ] && die "No se obtuvo DB_ID tras crear DB"
 else
-  log "database '${DB_DISPLAY_NAME}' ya existe (id=${db_id})"
+  echo "[ok] DB ya existe id=$DB_ID"
 fi
 
-# 6) Crear (o reutilizar) tarjetas (cards) SQL
-create_card(){
-  local name="$1" sql="$2" display="$3"
-  local cid
-  cid="$(api_get "${MB_URL}/api/search?type=card&q=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))' "$name")" \
-    | python3 - <<'PY'
-import sys,json,os
-name=os.environ.get("CARD_NAME")
-data=json.load(sys.stdin)
-for it in data.get("data",[]):
-  if it.get("model")=="card" and it.get("name")==name:
-    print(it.get("id")); break
-PY
-CARD_NAME="$name"
-)"
-  if [[ -n "$cid" ]]; then
-    echo "$cid"; return 0
-  fi
-  local payload
-  payload="$(python3 - <<PY
-import json, os
-print(json.dumps({
-  "name": os.environ["CARD_NAME"],
-  "dataset_query": {
-    "type": "native",
-    "native": {"query": os.environ["CARD_SQL"], "template-tags": {}},
-    "database": int(os.environ["DB_ID"])
-  },
-  "display": os.environ["CARD_DISPLAY"],
-  "visualization_settings": {}
-}))
-PY
-CARD_NAME="$name" CARD_SQL="$sql" CARD_DISPLAY="$display" DB_ID="$db_id"
-)"
-  cid="$(api_post "${MB_URL}/api/card" -d "$payload" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')"
-  echo "$cid"
-}
-
-SQL1="SELECT sentiment_label, COUNT(*) AS n FROM dw_messages GROUP BY sentiment_label ORDER BY n DESC;"
-SQL2="SELECT DATE_FORMAT(ingest_ts, '%Y-%m-%d %H:%i:00') AS minute, sentiment_label, COUNT(*) AS n FROM dw_messages GROUP BY minute, sentiment_label ORDER BY minute ASC;"
-SQL3="SELECT user_id, COUNT(*) AS n_neg FROM dw_messages WHERE sentiment_label IN ('vneg','neg') GROUP BY user_id ORDER BY n_neg DESC LIMIT 10;"
-
-CARD1_ID="$(create_card '01 Distribucion por sentimiento' "$SQL1" 'bar')"
-CARD2_ID="$(create_card '02 Serie por minuto (stacked)' "$SQL2" 'area')"
-CARD3_ID="$(create_card '03 Top usuarios negativos' "$SQL3" 'bar')"
-log "cards: $CARD1_ID, $CARD2_ID, $CARD3_ID"
-
-# 7) Crear (o reutilizar) dashboard y agregar cards
-dash_id="$(api_get "${MB_URL}/api/dashboard" | python3 - <<'PY'
-import sys,json,os
-name=os.environ["DASHBOARD_NAME"]
-for d in json.load(sys.stdin):
-  if d.get("name")==name:
-    print(d.get("id")); break
-PY
-DASHBOARD_NAME="$DASHBOARD_NAME"
-)"
-if [[ -z "${dash_id:-}" ]]; then
-  dash_id="$(api_post "${MB_URL}/api/dashboard" -d "$(python3 - <<PY
-import json, os
-print(json.dumps({"name": os.environ["DASHBOARD_NAME"], "parameters": []}))
-PY
-DASHBOARD_NAME="$DASHBOARD_NAME"
-)" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')"
-  log "dashboard creado id=${dash_id}"
-else
-  log "dashboard ya existe (id=${dash_id})"
-fi
-
-add_card(){
-  local did="$1" cid="$2" row="$3" col="$4" sx="$5" sy="$6"
-  # evitar duplicados: listar ordered_cards
-  local present
-  present="$(api_get "${MB_URL}/api/dashboard/${did}" | python3 - <<'PY'
-import sys,json,os
-cid=int(os.environ["CID"])
-oc=json.load(sys.stdin).get("ordered_cards",[])
-print("yes" if any(c.get("card_id")==cid for c in oc) else "no")
-PY
-CID="$cid"
-)"
-  if [[ "$present" == "yes" ]]; then return 0; fi
-  api_post "${MB_URL}/api/dashboard/${did}/cards" -d "$(python3 - <<PY
-import json, os
-print(json.dumps({"cardId": int(os.environ["CID"]), "row": int(os.environ["ROW"]), "col": int(os.environ["COL"]),
-                  "sizeX": int(os.environ["SX"]), "sizeY": int(os.environ["SY"])}))
-PY
-CID="$cid" ROW="$row" COL="$col" SX="$sx" SY="$sy"
-)" >/dev/null
-}
-
-# Layout simple
-add_card "$dash_id" "$CARD1_ID" 0 0 12 8
-add_card "$dash_id" "$CARD2_ID" 8 0 24 10
-add_card "$dash_id" "$CARD3_ID" 0 12 12 8
-
-log "Listo. Dashboard '${DASHBOARD_NAME}' y 3 visualizaciones configuradas."
-echo "URL (via tunel): ${MB_URL}"
+# -------------------------------
+# 3) Crear 3 tarjetas (SQL nativas) y dashboard
+# -------------------------------
+make_card() {
+  title="$1"; sql="$2"
+  payload=$(cat <<JSON
+{
+  "name": "$(jescape "$title")",
+ 

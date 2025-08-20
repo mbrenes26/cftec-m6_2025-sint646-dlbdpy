@@ -123,7 +123,7 @@ jobs:
           az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
             --scripts '
-              set -Eeuo pipefail
+              set -eu
               docker network create labnet >/dev/null 2>&1 || true
               docker rm -f mongo >/dev/null 2>&1 || true
               mkdir -p /data/mongo
@@ -145,7 +145,7 @@ jobs:
           az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
             --scripts '
-              set -Eeuo pipefail
+              set -eu
               docker network create labnet >/dev/null 2>&1 || true
               docker rm -f mongo-express >/dev/null 2>&1 || true
               docker run -d --name mongo-express --network labnet \
@@ -166,7 +166,7 @@ jobs:
           az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
             --scripts '
-              set -Eeuo pipefail
+              set -eu
               APP_USER="${0}"; JP="${1}"; SESS="${2}"
               id "$APP_USER" >/dev/null 2>&1 || { echo "usuario no existe: $APP_USER" >&2; exit 1; }
               su - "$APP_USER" -c "tmux has-session -t \"$SESS\" 2>/dev/null && tmux kill-session -t \"$SESS\" || true"
@@ -216,7 +216,7 @@ jobs:
           az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
             --scripts '
-              set -Eeuo pipefail
+              set -eu
               docker network create labnet >/dev/null 2>&1 || true
               for svc in mysql metabase; do
                 if docker ps --format "{{.Names}}" | grep -qx "$svc"; then
@@ -253,7 +253,7 @@ jobs:
           az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
             --scripts '
-              set -Eeuo pipefail
+              set -eu
               echo "== docker ps (mysql, metabase, kafka, mongo, mongo-express) =="
               docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | egrep "mysql|metabase|kafka|mongo(-express)?"
               echo
