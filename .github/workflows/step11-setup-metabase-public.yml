@@ -11,6 +11,10 @@ on:
         description: 'Nombre logico de la DB en Metabase'
         required: false
         default: 'DWH'
+      admin_pass:
+        description: 'Password admin Metabase (opcional; si vacio usa Secret o genera una)'
+        required: false
+        default: 'pass'
 
 permissions:
   id-token: write
@@ -92,37 +96,52 @@ jobs:
             --scripts '
               set -eu
               timeout="${1:-240}"
-              end=$((SECONDS+timeout))
-              while [ $SECONDS -lt $end ]; do
+              start="$(date +%s)"
+              while :; do
                 code="$(curl -sS -m 2 -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/api/health || true)"
                 if [ "$code" = "200" ]; then
                   echo "Metabase responde /api/health (200)."
                   exit 0
                 fi
+                now="$(date +%s)"
+                elapsed=$((now - start))
+                if [ "$elapsed" -ge "$timeout" ]; then
+                  echo "Metabase no listo tras ${timeout}s" >&2
+                  docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | egrep "metabase|^NAMES" || true
+                  exit 1
+                fi
                 sleep 3
               done
-              echo "Metabase no listo tras ${timeout}s" >&2
-              docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | egrep "metabase|^NAMES" || true
-              exit 1
             ' \
             --parameters "240" \
             --query "value[0].message" -o tsv
 
-      - name: Check METABASE_ADMIN_PASS secret
+      - name: Resolve Metabase admin password (input/secret/fallback)
+        id: mbpass
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -z "${{ secrets.METABASE_ADMIN_PASS }}" ]]; then
-            echo "METABASE_ADMIN_PASS no definido en GitHub Secrets" >&2
-            exit 1
+          INPUT="${{ inputs.admin_pass }}"
+          SECRET="${{ secrets.METABASE_ADMIN_PASS }}"
+          if [[ -n "$INPUT" ]]; then
+            PASS="$INPUT"
+            GENERATED=0
+          elif [[ -n "$SECRET" ]]; then
+            PASS="$SECRET"
+            GENERATED=0
+          else
+            # Genera 20 chars alfanumericos
+            PASS="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 20)"
+            GENERATED=1
           fi
+          echo "pass=${PASS}" >> "$GITHUB_OUTPUT"
+          echo "generated=${GENERATED}" >> "$GITHUB_OUTPUT"
 
       - name: Seed Metabase via API (runs on VM, local URL)
         shell: bash
-        env:
-          MB_ADMIN_PASS: ${{ secrets.METABASE_ADMIN_PASS }}
         run: |
           set -euo pipefail
+          MB_PASS="${{ steps.mbpass.outputs.pass }}"
           az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" \
             --name "$VM_NAME" \
@@ -130,7 +149,7 @@ jobs:
             --scripts @"$GITHUB_WORKSPACE/scripts/setup_metabase_and_seed.sh" \
             --parameters \
               "${{ inputs.admin_email }}" \
-              "$MB_ADMIN_PASS" \
+              "$MB_PASS" \
               "Admin User" \
               "http://127.0.0.1:3000" \
               "mysql" "3306" "lab" "root" "pass" \
@@ -143,11 +162,16 @@ jobs:
         run: |
           set -euo pipefail
           PUBIP="${{ steps.getpip.outputs.pubip }}"
+          GENERATED="${{ steps.mbpass.outputs.generated }}"
+          MB_PASS_OUT=""
+          if [[ "${GENERATED}" == "1" ]]; then
+            MB_PASS_OUT="(Password generado: ${{ steps.mbpass.outputs.pass }})"
+          fi
           {
             echo "## Metabase configurado (acceso publico restringido por NSG)"
             echo
             echo "- URL:  http://${PUBIP}:3000"
-            echo "- Admin: ${{ inputs.admin_email }}"
+            echo "- Admin: ${{ inputs.admin_email }}  ${MB_PASS_OUT}"
             echo "- Base de datos: '${{ inputs.db_display_name }}' -> host=mysql, puerto=3306, db=lab"
             echo
             echo "Notas:"
