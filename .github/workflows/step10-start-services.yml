@@ -79,14 +79,21 @@ jobs:
         id: getpip
         shell: bash
         run: |
-          set -eu
-          PUBIP="$(az vm list-ip-addresses \
-            -g "$RESOURCE_GROUP" -n "$VM_NAME" \
-            --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)"
+          set -euo pipefail
+          for i in {1..10}; do
+            PUBIP="$(az vm list-ip-addresses \
+              -g "$RESOURCE_GROUP" -n "$VM_NAME" \
+              --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv || true)"
+            if [[ -n "${PUBIP:-}" ]]; then break; fi
+            echo "Aun sin IP publica, reintentando..." >&2
+            sleep 6
+          done
           if [[ -z "${PUBIP:-}" ]]; then
             echo "No public IP found for $VM_NAME" >&2
+            az vm list-ip-addresses -g "$RESOURCE_GROUP" -n "$VM_NAME" -o json >&2 || true
             exit 1
           fi
+          echo "Public IP: ${PUBIP}"
           echo "pubip=${PUBIP}" >> "$GITHUB_OUTPUT"
 
       # Helpers provistos por cloud-init
@@ -152,12 +159,14 @@ jobs:
         if: ${{ inputs.start_mongo_express == 'true' }}
         shell: bash
         run: |
-          set -eu
+          set -euo pipefail
+          PUBIP="${{ steps.getpip.outputs.pubip }}"
           az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
             --scripts '
               set -eu
+              PUBIP="$1"
               docker network create labnet >/dev/null 2>&1 || true
               docker rm -f mongo-express >/dev/null 2>&1 || true
               docker run -d --name mongo-express --network labnet \
@@ -167,28 +176,39 @@ jobs:
                 -e ME_CONFIG_MONGODB_ADMINPASSWORD=pass \
                 --restart unless-stopped \
                 mongo-express:latest
-              echo "Mongo Express en: http://0.0.0.0:8081"
+              echo "Mongo Express en: http://$PUBIP:8081"
             ' \
+            --parameters "$PUBIP" \
             --query "value[0].message" -o tsv
 
       - name: Start Jupyter (tmux)
-        if: ${{ inputs.start_jupyter == 'true' }}
         shell: bash
         run: |
-          set -eu
+          set -euo pipefail
+          PUBIP="${{ steps.getpip.outputs.pubip }}"
           az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
             --scripts '
               set -eu
-              APP_USER="${0}"; JP="${1}"; SESS="${2}"
+              APP_USER="$1"
+              JP="$2"
+              SESS="$3"
+              PUBIP="$4"
+
               id "$APP_USER" >/dev/null 2>&1 || { echo "usuario no existe: $APP_USER" >&2; exit 1; }
+
+              # reiniciar sesion tmux si existia
               su - "$APP_USER" -c "tmux has-session -t \"$SESS\" 2>/dev/null && tmux kill-session -t \"$SESS\" || true"
+
+              # lanzar jupyter en tmux
               su - "$APP_USER" -c "tmux new -s \"$SESS\" -d \"jupyter notebook --no-browser --ip=0.0.0.0 --port=$JP\""
-              echo "Jupyter en: http://0.0.0.0:${JP} (token en tmux: $SESS)"
+
+              echo "Jupyter en: http://$PUBIP:${JP} (token visible con: su - $APP_USER -c \"tmux capture-pane -pt $SESS | grep -m1 -o 'http://[^ ]*' \")"
             ' \
-            --parameters "${{ inputs.app_user }}" "${{ inputs.jupyter_port }}" "${{ inputs.session_name }}" \
+            --parameters "azureuser" "8888" "jupyterlab" "$PUBIP" \
             --query "value[0].message" -o tsv
+
 
       - name: Show service endpoints (public IP; requiere NSG)
         shell: bash
