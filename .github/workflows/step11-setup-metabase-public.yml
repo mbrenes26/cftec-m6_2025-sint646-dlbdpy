@@ -8,13 +8,13 @@ on:
         required: false
         default: 'admin@example.local'
       db_display_name:
-        description: 'Nombre logico de la DB en Metabase'
+        description: 'Nombre logico de la DB en Metabase (sin espacios)'
         required: false
         default: 'DWH'
       admin_pass:
-        description: 'Password admin Metabase (opcional; si vacio usa Secret o genera una)'
+        description: 'Password admin Metabase (opcional; si vacio usa "pass" para demo)'
         required: false
-        default: 'pass'
+        default: ''
 
 permissions:
   id-token: write
@@ -116,45 +116,43 @@ jobs:
             --parameters "240" \
             --query "value[0].message" -o tsv
 
-      - name: Resolve Metabase admin password (input/secret/fallback)
+      - name: Resolve admin password (input or default)
         id: mbpass
         shell: bash
         run: |
           set -euo pipefail
-          INPUT="${{ inputs.admin_pass }}"
-          SECRET="${{ secrets.METABASE_ADMIN_PASS }}"
-          if [[ -n "$INPUT" ]]; then
-            PASS="$INPUT"
-            GENERATED=0
-          elif [[ -n "$SECRET" ]]; then
-            PASS="$SECRET"
-            GENERATED=0
+          if [[ -n "${{ inputs.admin_pass }}" ]]; then
+            echo "pass=${{ inputs.admin_pass }}" >> "$GITHUB_OUTPUT"
           else
-            # Genera 20 chars alfanumericos
-            PASS="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 20)"
-            GENERATED=1
+            echo "pass=pass" >> "$GITHUB_OUTPUT"
           fi
-          echo "pass=${PASS}" >> "$GITHUB_OUTPUT"
-          echo "generated=${GENERATED}" >> "$GITHUB_OUTPUT"
 
-      - name: Seed Metabase via API (runs on VM, local URL)
+      - name: Seed Metabase via API (runs on VM, local URL; args sin espacios)
         shell: bash
         run: |
           set -euo pipefail
           MB_PASS="${{ steps.mbpass.outputs.pass }}"
+          # NOTA: sin espacios en nombre admin ni dashboard para evitar bugs del wrapper RunShellScript
+          ADMIN_EMAIL="${{ inputs.admin_email }}"
+          ADMIN_NAME="Admin_User"
+          MB_URL="http://127.0.0.1:3000"
+          DB_HOST="mysql"; DB_PORT="3306"; DB_NAME="lab"; DB_USER="root"; DB_PASS="pass"
+          DB_DISPLAY="${{ inputs.db_display_name }}"
+          DASH_TITLE="Sentiment_Streaming_Kafka_Mongo_DL_MySQL"
+
           az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" \
             --name "$VM_NAME" \
             --command-id RunShellScript \
             --scripts @"$GITHUB_WORKSPACE/scripts/setup_metabase_and_seed.sh" \
             --parameters \
-              "${{ inputs.admin_email }}" \
+              "$ADMIN_EMAIL" \
               "$MB_PASS" \
-              "Admin User" \
-              "http://127.0.0.1:3000" \
-              "mysql" "3306" "lab" "root" "pass" \
-              "${{ inputs.db_display_name }}" \
-              "Sentiment Streaming Kafka->Mongo->DL->MySQL" \
+              "$ADMIN_NAME" \
+              "$MB_URL" \
+              "$DB_HOST" "$DB_PORT" "$DB_NAME" "$DB_USER" "$DB_PASS" \
+              "$DB_DISPLAY" \
+              "$DASH_TITLE" \
             --query "value[0].message" -o tsv
 
       - name: Show public access
@@ -162,16 +160,11 @@ jobs:
         run: |
           set -euo pipefail
           PUBIP="${{ steps.getpip.outputs.pubip }}"
-          GENERATED="${{ steps.mbpass.outputs.generated }}"
-          MB_PASS_OUT=""
-          if [[ "${GENERATED}" == "1" ]]; then
-            MB_PASS_OUT="(Password generado: ${{ steps.mbpass.outputs.pass }})"
-          fi
           {
             echo "## Metabase configurado (acceso publico restringido por NSG)"
             echo
             echo "- URL:  http://${PUBIP}:3000"
-            echo "- Admin: ${{ inputs.admin_email }}  ${MB_PASS_OUT}"
+            echo "- Admin: ${{ inputs.admin_email }}"
             echo "- Base de datos: '${{ inputs.db_display_name }}' -> host=mysql, puerto=3306, db=lab"
             echo
             echo "Notas:"

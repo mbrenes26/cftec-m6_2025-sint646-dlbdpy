@@ -2,7 +2,7 @@
 # Configura Metabase y crea 3 visualizaciones + dashboard (idempotente).
 # Requiere: docker, curl, python3. Usa helpers /opt/lab/bin/start_*.sh si existen.
 
-set -Eeuo pipefail
+set -eu
 
 # Parametros
 ADMIN_EMAIL="${1:-admin@example.local}"
