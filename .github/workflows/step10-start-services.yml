@@ -209,6 +209,42 @@ jobs:
             --parameters "azureuser" "8888" "jupyterlab" "$PUBIP" \
             --query "value[0].message" -o tsv
 
+      - name: Show Jupyter URL with token
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBIP="${{ steps.getpip.outputs.pubip }}"
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -eu
+              su - "azureuser" -c "jupyter notebook list || true"
+            ' \
+            --query "value[0].message" -o tsv \
+          | sed "s#http://0\.0\.0\.0#http://${PUBIP}#g"
+
+
+      - name: Ensure mysql/metabase in labnet
+        shell: bash
+        run: |
+          set -eu
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -eu
+              docker network create labnet >/dev/null 2>&1 || true
+              for svc in mysql metabase; do
+                if docker ps --format "{{.Names}}" | grep -qx "$svc"; then
+                  docker network inspect labnet -f "{{json .Containers}}" | grep -q "$svc" || \
+                    docker network connect labnet "$svc" || true
+                fi
+              done
+              echo "labnet OK; mysql/metabase conectados."
+            ' \
+            --query "value[0].message" -o tsv
+
 
       - name: Show service endpoints (public IP; requiere NSG)
         shell: bash
