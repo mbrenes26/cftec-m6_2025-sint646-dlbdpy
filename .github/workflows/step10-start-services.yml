@@ -68,7 +68,7 @@ jobs:
       - name: Azure CLI Login (Service Principal)
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
           az login --service-principal \
             --username "$ARM_CLIENT_ID" \
             --password "$ARM_CLIENT_SECRET" \
@@ -79,7 +79,7 @@ jobs:
         id: getpip
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
           PUBIP="$(az vm list-ip-addresses \
             -g "$RESOURCE_GROUP" -n "$VM_NAME" \
             --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)"
@@ -94,7 +94,7 @@ jobs:
         if: ${{ inputs.start_kafka == 'true' }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
           az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
@@ -105,7 +105,7 @@ jobs:
         if: ${{ inputs.start_mysql == 'true' }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
           az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
@@ -116,7 +116,7 @@ jobs:
         if: ${{ inputs.start_metabase == 'true' }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
           az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
@@ -128,7 +128,7 @@ jobs:
         if: ${{ inputs.start_mongo == 'true' }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
           az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
@@ -152,7 +152,7 @@ jobs:
         if: ${{ inputs.start_mongo_express == 'true' }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
           az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
@@ -175,7 +175,7 @@ jobs:
         if: ${{ inputs.start_jupyter == 'true' }}
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
           az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
@@ -193,7 +193,7 @@ jobs:
       - name: Show service endpoints (public IP; requiere NSG)
         shell: bash
         run: |
-          set -euo pipefail
+          set -eu
           PUBIP="${{ steps.getpip.outputs.pubip }}"
           JP="${{ inputs.jupyter_port }}"
           endpoints=(
