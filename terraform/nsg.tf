@@ -134,7 +134,6 @@ resource "azurerm_network_security_group" "lab_nsg" {
     source_address_prefix      = "190.108.74.42/32"
     destination_address_prefix = "*"
   }
-}
   # Metabase UI - only your IP
   security_rule {
     name                       = "Allow-Metabase-MyIP"
@@ -147,6 +146,8 @@ resource "azurerm_network_security_group" "lab_nsg" {
     source_address_prefix      = "190.108.74.42/32"
     destination_address_prefix = "*"
   }
+
+}
 
 # Associate NSG to the subnet defined in network.tf
 resource "azurerm_subnet_network_security_group_association" "lab_subnet_nsg" {
