@@ -69,35 +69,73 @@ jobs:
             --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
             --command-id RunShellScript \
             --scripts '
-              set -Eeuo pipefail
+              set -eu
               docker network create labnet >/dev/null 2>&1 || true
-              # Conectar contenedores existentes a labnet si no lo estan
               for svc in mysql metabase; do
                 if docker ps --format "{{.Names}}" | grep -qx "$svc"; then
-                  docker network inspect labnet -f "{{json .Containers}}" | grep -q "$svc" || \
+                  if ! docker network inspect labnet -f "{{json .Containers}}" | grep -q "$svc"; then
                     docker network connect labnet "$svc" || true
+                  fi
                 fi
               done
               echo "labnet OK; mysql/metabase conectados si estaban corriendo."
             ' \
             --query "value[0].message" -o tsv
 
-      - name: Seed Metabase via API (public URL)
+      - name: Wait for Metabase to be ready (local healthcheck)
         shell: bash
-        env:
-          MB_ADMIN_PASS: ${{ secrets.METABASE_ADMIN_PASS }}   # define este secreto
         run: |
           set -euo pipefail
-          PUBIP="${{ steps.getpip.outputs.pubip }}"
-          MB_URL="http://${PUBIP}:3000"
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -eu
+              timeout="${1:-240}"
+              end=$((SECONDS+timeout))
+              while [ $SECONDS -lt $end ]; do
+                code="$(curl -sS -m 2 -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/api/health || true)"
+                if [ "$code" = "200" ]; then
+                  echo "Metabase responde /api/health (200)."
+                  exit 0
+                fi
+                sleep 3
+              done
+              echo "Metabase no listo tras ${timeout}s" >&2
+              docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | egrep "metabase|^NAMES" || true
+              exit 1
+            ' \
+            --parameters "240" \
+            --query "value[0].message" -o tsv
+
+      - name: Check METABASE_ADMIN_PASS secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${{ secrets.METABASE_ADMIN_PASS }}" ]]; then
+            echo "METABASE_ADMIN_PASS no definido en GitHub Secrets" >&2
+            exit 1
+          fi
+
+      - name: Seed Metabase via API (runs on VM, local URL)
+        shell: bash
+        env:
+          MB_ADMIN_PASS: ${{ secrets.METABASE_ADMIN_PASS }}
+        run: |
+          set -euo pipefail
           az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" \
             --name "$VM_NAME" \
             --command-id RunShellScript \
             --scripts @"$GITHUB_WORKSPACE/scripts/setup_metabase_and_seed.sh" \
-            --parameters "${{ inputs.admin_email }}" "$MB_ADMIN_PASS" "Admin User" "$MB_URL" \
-                        "mysql" "3306" "lab" "root" "pass" "${{ inputs.db_display_name }}" \
-                        "Sentiment Streaming (Kafka->Mongo->DL->MySQL)" \
+            --parameters \
+              "${{ inputs.admin_email }}" \
+              "$MB_ADMIN_PASS" \
+              "Admin User" \
+              "http://127.0.0.1:3000" \
+              "mysql" "3306" "lab" "root" "pass" \
+              "${{ inputs.db_display_name }}" \
+              "Sentiment Streaming Kafka->Mongo->DL->MySQL" \
             --query "value[0].message" -o tsv
 
       - name: Show public access
@@ -113,6 +151,6 @@ jobs:
             echo "- Base de datos: '${{ inputs.db_display_name }}' -> host=mysql, puerto=3306, db=lab"
             echo
             echo "Notas:"
-            echo "- Este workflow conecta los contenedores mysql y metabase a la red Docker 'labnet' para resolucion por nombre."
-            echo "- Si reinicias MySQL o Metabase via helpers, seguiran conectados a 'labnet' (Docker persiste la conexion)."
+            echo "- El seed se realiza via http://127.0.0.1:3000 dentro de la VM; el acceso publico es via IP/NSG."
+            echo "- mysql y metabase estan unidos a la red Docker 'labnet' para resolucion por nombre."
           } >> "$GITHUB_STEP_SUMMARY"
