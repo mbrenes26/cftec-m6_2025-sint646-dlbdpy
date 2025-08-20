@@ -127,14 +127,15 @@ PY
 
 ensure_json_or_die() {
   f="$1"; ctx="$2"
-  python3 - "$f" "$ctx" <<'PY' || ( print("Respuesta no JSON en contexto dado"); sys.exit(1) )
+  python3 - "$f"<<'PY' || { echo "Respuesta no JSON en: $ctx" >&2; exit 1; }
 import sys, json
-fn=sys.argv[1]
-s=open(fn,'r',encoding='utf-8').read().strip()
+fn = sys.argv[1]
+s = open(fn,'r',encoding='utf-8').read().strip()
 if s:
     json.loads(s)
 PY
 }
+
 
 ensure_python3
 
