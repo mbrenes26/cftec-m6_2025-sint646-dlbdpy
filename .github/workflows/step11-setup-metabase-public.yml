@@ -136,12 +136,16 @@ jobs:
             --command-id RunShellScript \
             --scripts '
               set -eu
-              # Crea/actualiza usuario "metabase" con mysql_native_password y permisos de solo lectura sobre lab.*
-              docker exec -i mysql mysql -uroot -ppass -e "
-                CREATE USER IF NOT EXISTS 'metabase'@'%' IDENTIFIED WITH mysql_native_password BY 'mb_pass_123';
-                GRANT SELECT, SHOW VIEW ON lab.* TO 'metabase'@'%';
-                FLUSH PRIVILEGES;
-              "
+              # SQL en archivo temporal, sin expansion de shell
+              cat >/tmp/mb_user.sql <<'\''SQL'\''
+              CREATE USER IF NOT EXISTS '\''metabase'\''@'\''%'\'' IDENTIFIED BY '\''mb_pass_123'\'';
+              ALTER USER '\''metabase'\''@'\''%'\'' IDENTIFIED WITH mysql_native_password BY '\''mb_pass_123'\'';
+              GRANT SELECT, SHOW VIEW ON lab.* TO '\''metabase'\''@'\''%'\'';
+              FLUSH PRIVILEGES;
+              SQL
+              # Ejecutar dentro del contenedor leyendo desde stdin
+              docker exec -i mysql sh -lc "mysql -uroot -ppass < /dev/stdin" < /tmp/mb_user.sql
+              rm -f /tmp/mb_user.sql
               echo "MySQL: usuario metabase listo (read-only sobre lab.*)"
             ' \
             --query "value[0].message" -o tsv
