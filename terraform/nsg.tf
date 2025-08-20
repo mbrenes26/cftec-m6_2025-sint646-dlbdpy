@@ -135,6 +135,18 @@ resource "azurerm_network_security_group" "lab_nsg" {
     destination_address_prefix = "*"
   }
 }
+  # Metabase UI - only your IP
+  security_rule {
+    name                       = "Allow-Metabase-MyIP"
+    priority                   = 190
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "3000"
+    source_address_prefix      = "190.108.74.42/32"
+    destination_address_prefix = "*"
+  }
 
 # Associate NSG to the subnet defined in network.tf
 resource "azurerm_subnet_network_security_group_association" "lab_subnet_nsg" {

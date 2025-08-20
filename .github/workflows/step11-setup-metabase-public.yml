@@ -1,0 +1,118 @@
+name: Step11 - Setup Metabase (public IP, DB + charts + dashboard)
+
+on:
+  workflow_dispatch:
+    inputs:
+      admin_email:
+        description: 'Correo admin Metabase'
+        required: false
+        default: 'admin@example.local'
+      db_display_name:
+        description: 'Nombre logico de la DB en Metabase'
+        required: false
+        default: 'DWH'
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: vm-cftec-m62025-SINT646-labs
+  cancel-in-progress: false
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  RESOURCE_GROUP: rg-cftec-m62025-SINT646
+  VM_NAME: vm-cftec-m62025-SINT646-labs
+
+jobs:
+  setup-metabase-public:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure CLI Login (Service Principal)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az login --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
+
+      - name: Get VM public IP
+        id: getpip
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBIP="$(az vm list-ip-addresses \
+            -g "$RESOURCE_GROUP" -n "$VM_NAME" \
+            --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)"
+          if [[ -z "${PUBIP:-}" ]]; then
+            echo "No public IP found for $VM_NAME" >&2
+            exit 1
+          fi
+          echo "pubip=${PUBIP}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure mysql/metabase in same Docker network (labnet)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -Eeuo pipefail
+              docker network create labnet >/dev/null 2>&1 || true
+              # Conectar contenedores existentes a labnet si no lo estan
+              for svc in mysql metabase; do
+                if docker ps --format "{{.Names}}" | grep -qx "$svc"; then
+                  docker network inspect labnet -f "{{json .Containers}}" | grep -q "$svc" || \
+                    docker network connect labnet "$svc" || true
+                fi
+              done
+              echo "labnet OK; mysql/metabase conectados si estaban corriendo."
+            ' \
+            --query "value[0].message" -o tsv
+
+      - name: Seed Metabase via API (public URL)
+        shell: bash
+        env:
+          MB_ADMIN_PASS: ${{ secrets.METABASE_ADMIN_PASS }}   # define este secreto
+        run: |
+          set -euo pipefail
+          PUBIP="${{ steps.getpip.outputs.pubip }}"
+          MB_URL="http://${PUBIP}:3000"
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts @"$GITHUB_WORKSPACE/scripts/setup_metabase_and_seed.sh" \
+            --parameters "${{ inputs.admin_email }}" "$MB_ADMIN_PASS" "Admin User" "$MB_URL" \
+                        "mysql" "3306" "lab" "root" "pass" "${{ inputs.db_display_name }}" \
+                        "Sentiment Streaming (Kafka->Mongo->DL->MySQL)" \
+            --query "value[0].message" -o tsv
+
+      - name: Show public access
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBIP="${{ steps.getpip.outputs.pubip }}"
+          {
+            echo "## Metabase configurado (acceso publico restringido por NSG)"
+            echo
+            echo "- URL:  http://${PUBIP}:3000"
+            echo "- Admin: ${{ inputs.admin_email }}"
+            echo "- Base de datos: '${{ inputs.db_display_name }}' -> host=mysql, puerto=3306, db=lab"
+            echo
+            echo "Notas:"
+            echo "- Este workflow conecta los contenedores mysql y metabase a la red Docker 'labnet' para resolucion por nombre."
+            echo "- Si reinicias MySQL o Metabase via helpers, seguiran conectados a 'labnet' (Docker persiste la conexion)."
+          } >> "$GITHUB_STEP_SUMMARY"

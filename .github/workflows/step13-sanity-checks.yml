@@ -1,0 +1,133 @@
+name: Step13 - Sanity Checks (Docker, Mongo, MySQL, Ports)
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_user:
+        description: "Usuario no root (para consultar Jupyter si aplica)"
+        required: false
+        default: "azureuser"
+      mysql_db:
+        description: "Base de datos MySQL (DWH)"
+        required: false
+        default: "lab"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: vm-cftec-m62025-SINT646-labs
+  cancel-in-progress: false
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  RESOURCE_GROUP: rg-cftec-m62025-SINT646
+  VM_NAME: vm-cftec-m62025-SINT646-labs
+
+jobs:
+  sanity-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure CLI Login (Service Principal)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az login --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
+
+      - name: Get VM public IP
+        id: getpip
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBIP="$(az vm list-ip-addresses \
+            -g "$RESOURCE_GROUP" -n "$VM_NAME" \
+            --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)"
+          if [[ -z "${PUBIP:-}" ]]; then
+            echo "No public IP found for $VM_NAME" >&2
+            exit 1
+          fi
+          echo "pubip=${PUBIP}" >> "$GITHUB_OUTPUT"
+
+      - name: Run checks on VM
+        id: checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -Eeuo pipefail
+              DB="${0}"
+
+              echo "== docker ps (mysql, metabase, kafka, kafka-ui, mongo, mongo-express) =="
+              docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | egrep "mysql|metabase|kafka|kafka-ui|mongo(-express)?|^NAMES" || true
+              echo
+
+              echo "== Puertos escuchando (3306, 3000, 9000, 8081, 27017, 29092, 8888) =="
+              ss -ltn | egrep ":3306|:3000|:9000|:8081|:27017|:29092|:8888" || true
+              echo
+
+              echo "== MySQL: conteos en dw_messages =="
+              mysql -h 127.0.0.1 -P 3306 -u root -ppass -e "
+                USE \`${DB}\`;
+                SELECT COUNT(*) AS total FROM dw_messages;
+                SELECT sentiment_label, COUNT(*) AS n
+                FROM dw_messages
+                GROUP BY sentiment_label
+                ORDER BY n DESC;
+              " || true
+              echo
+
+              echo "== Mongo: conteos raw_messages (done/locked/pending) =="
+              python3 - <<PY || true
+from pymongo import MongoClient
+try:
+    c = MongoClient("mongodb://admin:pass@127.0.0.1:27017/?authSource=admin", serverSelectionTimeoutMS=3000)
+    coll = c["streamdb"]["raw_messages"]
+    done   = coll.count_documents({"proc.status":"done"})
+    locked = coll.count_documents({"proc.status":"locked"})
+    pend   = coll.count_documents({"proc":{"$exists":False}})
+    print(f"done={done} locked={locked} pending={pend}")
+except Exception as e:
+    print("mongo_error:", e)
+PY
+              echo
+
+              echo "== Jupyter (si corre en tmux) =="
+              whoami; id || true
+              su - '"'"'${{ inputs.app_user }}'"'"' -c "jupyter notebook list || true"
+            ' \
+            --parameters "${{ inputs.mysql_db }}" \
+            --query "value[0].message" -o tsv
+
+      - name: Summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBIP="${{ steps.getpip.outputs.pubip }}"
+          {
+            echo "## Sanity checks ejecutados"
+            echo
+            echo "- IP publica VM: ${PUBIP}"
+            echo "- Revisar salida del paso anterior para:"
+            echo "  - Estado de contenedores Docker."
+            echo "  - Puertos abiertos relevantes."
+            echo "  - Conteos en MySQL (dw_messages)."
+            echo "  - Conteos en Mongo (raw_messages)."
+            echo "  - Estado de Jupyter (si hay sesion)."
+          } >> "$GITHUB_STEP_SUMMARY"

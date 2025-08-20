@@ -1,0 +1,79 @@
+name: Step06 - Setup Metabase (DB + 3 charts + dashboard)
+
+on:
+  workflow_dispatch:
+    inputs:
+      admin_email:
+        description: 'Correo admin Metabase'
+        required: false
+        default: 'admin@example.local'
+      db_display_name:
+        description: 'Nombre logico de la DB en Metabase'
+        required: false
+        default: 'DWH'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  RESOURCE_GROUP: rg-cftec-m62025-SINT646
+  VM_NAME: vm-cftec-m62025-SINT646-labs
+
+jobs:
+  setup-metabase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure CLI Login (Service Principal)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az login --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
+
+      - name: Run setup script on VM (Run Command)
+        shell: bash
+        env:
+          MB_ADMIN_PASS: ${{ secrets.METABASE_ADMIN_PASS }}   # crea este secreto
+          DB_USER: root
+          DB_PASS: pass
+          DB_NAME: lab
+          DB_HOST: mysql
+          DB_PORT: "3306"
+        run: |
+          set -euo pipefail
+          # Parametros: ADMIN_EMAIL ADMIN_PASS ADMIN_NAME MB_URL DB_HOST DB_PORT DB_NAME DB_USER DB_PASS DB_DISPLAY_NAME DASHBOARD_NAME
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts @"$GITHUB_WORKSPACE/scripts/setup_metabase_and_seed.sh" \
+            --parameters "${{ inputs.admin_email }}" "$MB_ADMIN_PASS" "Admin User" "http://127.0.0.1:3000" \
+                        "$DB_HOST" "$DB_PORT" "$DB_NAME" "$DB_USER" "$DB_PASS" "${{ inputs.db_display_name }}" \
+                        "Sentiment Streaming (Kafka->Mongo->DL->MySQL)" \
+            --query "value[0].message" -o tsv
+
+      - name: Show how to access Metabase (via SSH tunnel)
+        shell: bash
+        run: |
+          echo "Abra un tunel SSH hacia la VM y navegue a Metabase:"
+          echo "ssh -N -L 3000:127.0.0.1:3000 azureuser@51.57.73.26"
+          echo "URL: http://127.0.0.1:3000"
+          {
+            echo "## Metabase listo"
+            echo ""
+            echo "- Túnel SSH: \`ssh -N -L 3000:127.0.0.1:3000 azureuser@51.57.73.26\`"
+            echo "- URL: http://127.0.0.1:3000"
+            echo "- Admin: \`${{ inputs.admin_email }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,222 @@
+name: Step10 - Start Services (Kafka/Mongo/MySQL/Metabase/Jupyter)
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_user:
+        description: "Usuario no root para Jupyter/tmux"
+        required: false
+        default: "azureuser"
+      jupyter_port:
+        description: "Puerto Jupyter"
+        required: false
+        default: "8888"
+      session_name:
+        description: "Nombre de sesion tmux"
+        required: false
+        default: "jupyterlab"
+      start_kafka:
+        description: "Arrancar Kafka (+ UI) via helper cloud-init"
+        required: false
+        default: "true"
+      start_mongo:
+        description: "Arrancar Mongo (sin helper, usa docker run)"
+        required: false
+        default: "true"
+      start_mongo_express:
+        description: "Arrancar Mongo Express UI (sin helper)"
+        required: false
+        default: "true"
+      start_mysql:
+        description: "Arrancar MySQL via helper cloud-init"
+        required: false
+        default: "true"
+      start_metabase:
+        description: "Arrancar Metabase via helper cloud-init"
+        required: false
+        default: "true"
+      start_jupyter:
+        description: "Arrancar Jupyter en tmux"
+        required: false
+        default: "true"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: vm-cftec-m62025-SINT646-labs
+  cancel-in-progress: false
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  RESOURCE_GROUP: rg-cftec-m62025-SINT646
+  VM_NAME: vm-cftec-m62025-SINT646-labs
+
+jobs:
+  start-services:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure CLI Login (Service Principal)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az login --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
+
+      - name: Get VM public IP
+        id: getpip
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBIP="$(az vm list-ip-addresses \
+            -g "$RESOURCE_GROUP" -n "$VM_NAME" \
+            --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)"
+          if [[ -z "${PUBIP:-}" ]]; then
+            echo "No public IP found for $VM_NAME" >&2
+            exit 1
+          fi
+          echo "pubip=${PUBIP}" >> "$GITHUB_OUTPUT"
+
+      # Helpers provistos por cloud-init
+      - name: Start Kafka (+ UI) via helper
+        if: ${{ inputs.start_kafka == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts 'bash /opt/lab/bin/start_kafka.sh' \
+            --query "value[0].message" -o tsv
+
+      - name: Start MySQL via helper
+        if: ${{ inputs.start_mysql == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts 'bash /opt/lab/bin/start_mysql.sh' \
+            --query "value[0].message" -o tsv
+
+      - name: Start Metabase via helper
+        if: ${{ inputs.start_metabase == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts 'bash /opt/lab/bin/start_metabase.sh' \
+            --query "value[0].message" -o tsv
+
+      # Servicios sin helper en cloud-init: arrancamos con docker run
+      - name: Start Mongo (container)
+        if: ${{ inputs.start_mongo == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -Eeuo pipefail
+              docker network create labnet >/dev/null 2>&1 || true
+              docker rm -f mongo >/dev/null 2>&1 || true
+              mkdir -p /data/mongo
+              docker run -d --name mongo --network labnet \
+                -p 27017:27017 \
+                -v /data/mongo:/data/db \
+                -e MONGO_INITDB_ROOT_USERNAME=admin \
+                -e MONGO_INITDB_ROOT_PASSWORD=pass \
+                --restart unless-stopped \
+                mongo:6.0
+              echo "Mongo en: 0.0.0.0:27017 (admin/pass)"
+            ' \
+            --query "value[0].message" -o tsv
+
+      - name: Start Mongo Express (UI)
+        if: ${{ inputs.start_mongo_express == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -Eeuo pipefail
+              docker network create labnet >/dev/null 2>&1 || true
+              docker rm -f mongo-express >/dev/null 2>&1 || true
+              docker run -d --name mongo-express --network labnet \
+                -p 8081:8081 \
+                -e ME_CONFIG_MONGODB_URL="mongodb://admin:pass@mongo:27017/?authSource=admin" \
+                -e ME_CONFIG_MONGODB_ADMINUSERNAME=admin \
+                -e ME_CONFIG_MONGODB_ADMINPASSWORD=pass \
+                --restart unless-stopped \
+                mongo-express:latest
+              echo "Mongo Express en: http://0.0.0.0:8081"
+            ' \
+            --query "value[0].message" -o tsv
+
+      - name: Start Jupyter (tmux)
+        if: ${{ inputs.start_jupyter == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -Eeuo pipefail
+              APP_USER="${0}"; JP="${1}"; SESS="${2}"
+              id "$APP_USER" >/dev/null 2>&1 || { echo "usuario no existe: $APP_USER" >&2; exit 1; }
+              su - "$APP_USER" -c "tmux has-session -t \"$SESS\" 2>/dev/null && tmux kill-session -t \"$SESS\" || true"
+              su - "$APP_USER" -c "tmux new -s \"$SESS\" -d \"jupyter notebook --no-browser --ip=0.0.0.0 --port=$JP\""
+              echo "Jupyter en: http://0.0.0.0:${JP} (token en tmux: $SESS)"
+            ' \
+            --parameters "${{ inputs.app_user }}" "${{ inputs.jupyter_port }}" "${{ inputs.session_name }}" \
+            --query "value[0].message" -o tsv
+
+      - name: Show service endpoints (public IP; requiere NSG)
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBIP="${{ steps.getpip.outputs.pubip }}"
+          JP="${{ inputs.jupyter_port }}"
+          endpoints=(
+            "Kafka UI|9000|http://${PUBIP}:9000"
+            "Kafka bootstrap|29092|${PUBIP}:29092"
+            "MongoDB|27017|${PUBIP}:27017"
+            "Mongo Express|8081|http://${PUBIP}:8081"
+            "Metabase|3000|http://${PUBIP}:3000"
+            "Jupyter Notebook|${JP}|http://${PUBIP}:${JP}"
+          )
+          {
+            echo "## Service endpoints (public, restringidos por NSG)"
+            echo
+            echo "| Servicio | Puerto | URL |"
+            echo "|---|---:|---|"
+            for item in "${endpoints[@]}"; do
+              name="${item%%|*}"; rest="${item#*|}"
+              port="${rest%%|*}"; url="${rest##*|}"
+              echo "| ${name} | ${port} | ${url} |"
+            done
+            echo
+            echo "Notas:"
+            echo "- Kafka/MySQL/Metabase se inician via helpers definidos en cloud-init."
+            echo "- MySQL puede quedar accesible en 0.0.0.0:3306 segun helper; controla el acceso en el NSG (recomendado: no abrir 3306)."
+            echo "- Para Mongo/Mongo Express no hay helpers en cloud-init; se arrancan aqui con docker run."
+          } >> "$GITHUB_STEP_SUMMARY"

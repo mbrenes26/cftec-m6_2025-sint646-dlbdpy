@@ -1,0 +1,288 @@
+name: Step12 - Bringup Demo End-to-End
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_user:
+        description: "Usuario no root para Jupyter/tmux"
+        required: false
+        default: "azureuser"
+      jupyter_port:
+        description: "Puerto Jupyter"
+        required: false
+        default: "8888"
+      session_name:
+        description: "Nombre de sesion tmux"
+        required: false
+        default: "jupyterlab"
+      admin_email:
+        description: "Correo admin Metabase"
+        required: false
+        default: "admin@example.local"
+      db_display_name:
+        description: "Nombre logico de la DB en Metabase"
+        required: false
+        default: "DWH"
+      topic_name:
+        description: "Kafka topic name"
+        required: false
+        default: "user-topic"
+      mysql_db:
+        description: "MySQL database name (DWH)"
+        required: false
+        default: "lab"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: vm-cftec-m62025-SINT646-labs
+  cancel-in-progress: false
+
+env:
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+  RESOURCE_GROUP: rg-cftec-m62025-SINT646
+  VM_NAME: vm-cftec-m62025-SINT646-labs
+
+jobs:
+  bringup-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Azure CLI Login (Service Principal)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az login --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --password "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID"
+          az account set --subscription "$ARM_SUBSCRIPTION_ID"
+
+      - name: Get VM public IP
+        id: getpip
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBIP="$(az vm list-ip-addresses \
+            -g "$RESOURCE_GROUP" -n "$VM_NAME" \
+            --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv)"
+          if [[ -z "${PUBIP:-}" ]]; then
+            echo "No public IP found for $VM_NAME" >&2
+            exit 1
+          fi
+          echo "pubip=${PUBIP}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for cloud-init (best effort)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts 'cloud-init status --wait --long || true' \
+            --query "value[0].message" -o tsv
+
+      # 1) Arranque de servicios segun helpers definidos en cloud-init
+      - name: Start Kafka (+ UI) via helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript --scripts 'bash /opt/lab/bin/start_kafka.sh' \
+            --query "value[0].message" -o tsv
+
+      - name: Start MySQL via helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript --scripts 'bash /opt/lab/bin/start_mysql.sh' \
+            --query "value[0].message" -o tsv
+
+      - name: Start Metabase via helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript --scripts 'bash /opt/lab/bin/start_metabase.sh' \
+            --query "value[0].message" -o tsv
+
+      - name: Start Mongo (container)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -Eeuo pipefail
+              docker network create labnet >/dev/null 2>&1 || true
+              docker rm -f mongo >/dev/null 2>&1 || true
+              mkdir -p /data/mongo
+              docker run -d --name mongo --network labnet \
+                -p 27017:27017 \
+                -v /data/mongo:/data/db \
+                -e MONGO_INITDB_ROOT_USERNAME=admin \
+                -e MONGO_INITDB_ROOT_PASSWORD=pass \
+                --restart unless-stopped \
+                mongo:6.0
+              echo "Mongo en: 0.0.0.0:27017 (admin/pass)"
+            ' \
+            --query "value[0].message" -o tsv
+
+      - name: Start Mongo Express (UI)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -Eeuo pipefail
+              docker network create labnet >/dev/null 2>&1 || true
+              docker rm -f mongo-express >/dev/null 2>&1 || true
+              docker run -d --name mongo-express --network labnet \
+                -p 8081:8081 \
+                -e ME_CONFIG_MONGODB_URL="mongodb://admin:pass@mongo:27017/?authSource=admin" \
+                -e ME_CONFIG_MONGODB_ADMINUSERNAME=admin \
+                -e ME_CONFIG_MONGODB_ADMINPASSWORD=pass \
+                --restart unless-stopped \
+                mongo-express:latest
+              echo "Mongo Express en: http://0.0.0.0:8081"
+            ' \
+            --query "value[0].message" -o tsv
+
+      - name: Start Jupyter in tmux
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -Eeuo pipefail
+              APP_USER="${0}"; JP="${1}"; SESS="${2}"
+              id "$APP_USER" >/dev/null 2>&1 || { echo "usuario no existe: $APP_USER" >&2; exit 1; }
+              su - "$APP_USER" -c "tmux has-session -t \"$SESS\" 2>/dev/null && tmux kill-session -t \"$SESS\" || true"
+              su - "$APP_USER" -c "tmux new -s \"$SESS\" -d \"jupyter notebook --no-browser --ip=0.0.0.0 --port=$JP\""
+              echo "Jupyter en: http://0.0.0.0:${JP} (token en tmux: $SESS)"
+            ' \
+            --parameters "${{ inputs.app_user }}" "${{ inputs.jupyter_port }}" "${{ inputs.session_name }}" \
+            --query "value[0].message" -o tsv
+
+      # 2) Init Data Plane (Kafka topic + esquema DWH idempotente)
+      - name: Init data plane (topic + DWH schema)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts @"$GITHUB_WORKSPACE/scripts/init_data_plane.sh" \
+            --parameters "${{ inputs.topic_name }}" "${{ inputs.mysql_db }}" "true" "true" "true" "true" \
+            --query "value[0].message" -o tsv
+
+      # 3) Dependencias ML y widgets de Jupyter
+      - name: Install ML dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts @"$GITHUB_WORKSPACE/scripts/install_ml_deps.sh" \
+            --parameters "${{ inputs.app_user }}" \
+            --query "value[0].message" -o tsv
+
+      - name: Install Jupyter widgets
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts @"$GITHUB_WORKSPACE/scripts/install_jupyter_widgets.sh" \
+            --parameters "${{ inputs.app_user }}" \
+            --query "value[0].message" -o tsv
+
+      # 4) Asegurar que mysql y metabase comparten red Docker para resolucion por nombre
+      - name: Ensure mysql/metabase in labnet
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -Eeuo pipefail
+              docker network create labnet >/dev/null 2>&1 || true
+              for svc in mysql metabase; do
+                if docker ps --format "{{.Names}}" | grep -qx "$svc"; then
+                  docker network inspect labnet -f "{{json .Containers}}" | grep -q "$svc" || \
+                    docker network connect labnet "$svc" || true
+                fi
+              done
+              echo "labnet OK; mysql/metabase conectados."
+            ' \
+            --query "value[0].message" -o tsv
+
+      # 5) Configurar Metabase via API (admin, DB MySQL, 3 charts y dashboard) usando la IP publica
+      - name: Seed Metabase (public IP)
+        shell: bash
+        env:
+          MB_ADMIN_PASS: ${{ secrets.METABASE_ADMIN_PASS }}
+        run: |
+          set -euo pipefail
+          PUBIP="${{ steps.getpip.outputs.pubip }}"
+          MB_URL="http://${PUBIP}:3000"
+          az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts @"$GITHUB_WORKSPACE/scripts/setup_metabase_and_seed.sh" \
+            --parameters "${{ inputs.admin_email }}" "$MB_ADMIN_PASS" "Admin User" "$MB_URL" \
+                        "mysql" "3306" "${{ inputs.mysql_db }}" "root" "pass" "${{ inputs.db_display_name }}" \
+                        "Sentiment Streaming (Kafka->Mongo->DL->MySQL)" \
+            --query "value[0].message" -o tsv
+
+      # 6) Verificaciones rapidas (MySQL y contenedores)
+      - name: Quick checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -Eeuo pipefail
+              echo "== docker ps (mysql, metabase, kafka, mongo, mongo-express) =="
+              docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | egrep "mysql|metabase|kafka|mongo(-express)?"
+              echo
+              echo "== MySQL dw_messages =="
+              mysql -h 127.0.0.1 -P 3306 -u root -ppass -e "USE '${0}'; SHOW TABLES; SHOW CREATE TABLE dw_messages\G" || true
+            ' \
+            --parameters "${{ inputs.mysql_db }}" \
+            --query "value[0].message" -o tsv
+
+      # 7) Resumen de endpoints
+      - name: Show public endpoints (NSG debe permitir solo tu IP)
+        shell: bash
+        run: |
+          set -euo pipefail
+          PUBIP="${{ steps.getpip.outputs.pubip }}"
+          JP="${{ inputs.jupyter_port }}"
+          {
+            echo "## Endpoints publicos (restringidos por NSG a tu IP)"
+            echo
+            echo "| Servicio | Puerto | URL |"
+            echo "|---|---:|---|"
+            echo "| Kafka UI | 9000 | http://${PUBIP}:9000 |"
+            echo "| Kafka bootstrap | 29092 | ${PUBIP}:29092 |"
+            echo "| MongoDB | 27017 | ${PUBIP}:27017 |"
+            echo "| Mongo Express | 8081 | http://${PUBIP}:8081 |"
+            echo "| Metabase | 3000 | http://${PUBIP}:3000 |"
+            echo "| Jupyter Notebook | ${JP} | http://${PUBIP}:${JP} |"
+            echo
+            echo "Notas:"
+            echo "- MySQL queda accesible desde la VM (127.0.0.1:3306). Metabase accede via red Docker (host=mysql)."
+            echo "- Para la demo, ejecuta el notebook y pon MAX_TOTAL=None."
+          } >> "$GITHUB_STEP_SUMMARY"
