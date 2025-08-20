@@ -174,7 +174,10 @@ if [ -n "$SETUP_TOKEN" ]; then
   SN="$(jescape 'Lab')"
   TK="$(jescape "$SETUP_TOKEN")"
 
-  payload='{"token":"'"$TK"'","user":{"first_name":"'"$FN"'","last_name":"","email":"'"$EM"'","password":"'"$PW"'"},"preferences":{"site_name":"'"$SN"'"}}'
+  # antes (mal): ... "preferences":{...}, last_name:""
+  # despues (bien): "prefs":{...}, last_name:"Admin"
+  payload='{"token":"'"$TK"'","user":{"first_name":"'"$FN"'","last_name":"Admin","email":"'"$EM"'","password":"'"$PW"'"}, "prefs":{"site_name":"'"$SN"'"}}'
+
   curl_json POST "/api/setup" "$payload"
   code=$(cat "$RESP_CODE")
   [ "$code" = "200" ] || { echo "Respuesta /api/setup (code=$code):"; cat "$RESP_BODY"; die "/api/setup fallo"; }

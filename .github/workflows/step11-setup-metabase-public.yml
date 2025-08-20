@@ -6,7 +6,7 @@ on:
       admin_email:
         description: 'Correo admin Metabase'
         required: false
-        default: 'admin@example.local'
+        default: 'admin@example.com'
       db_display_name:
         description: 'Nombre logico de la DB en Metabase (sin espacios)'
         required: false
@@ -14,7 +14,7 @@ on:
       admin_pass:
         description: 'Password admin Metabase (opcional; si vacio usa "pass" para demo)'
         required: false
-        default: ''
+        default: 'Seguro@123456789'
 
 permissions:
   id-token: write
@@ -131,14 +131,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          MB_PASS="${{ steps.mbpass.outputs.pass }}"
-          # NOTA: sin espacios en nombre admin ni dashboard para evitar bugs del wrapper RunShellScript
-          ADMIN_EMAIL="${{ inputs.admin_email }}"
+
+          # email valido y titulo sin espacios (el script los convierte)
+          ADMIN_EMAIL="admin@example.com"
           ADMIN_NAME="Admin_User"
           MB_URL="http://127.0.0.1:3000"
+
+          # credenciales MySQL
           DB_HOST="mysql"; DB_PORT="3306"; DB_NAME="lab"; DB_USER="root"; DB_PASS="pass"
-          DB_DISPLAY="${{ inputs.db_display_name }}"
+          DB_DISPLAY="DWH"
           DASH_TITLE="Sentiment_Streaming_Kafka_Mongo_DL_MySQL"
+
+          # password fuerte para Metabase (puedes reemplazar por un Secret si quieres)
+          MB_PASS="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 16)"
 
           az vm run-command invoke \
             --resource-group "$RESOURCE_GROUP" \
