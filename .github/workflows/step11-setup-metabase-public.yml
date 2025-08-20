@@ -127,7 +127,7 @@ jobs:
             echo "pass=pass" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create MySQL user for Metabase (native auth)
+      - name: Create MySQL user for Metabase (native auth, read-only)
         shell: bash
         run: |
           set -euo pipefail
@@ -136,12 +136,13 @@ jobs:
             --command-id RunShellScript \
             --scripts '
               set -eu
-              docker exec -i mysql mysql -uroot -ppass <<SQL
-CREATE USER IF NOT EXISTS '\''metabase'\''@'\''%'\'' IDENTIFIED WITH mysql_native_password BY '\''mb_pass_123'\'';
-GRANT SELECT, SHOW VIEW ON lab.* TO '\''metabase'\''@'\''%'\'';
-FLUSH PRIVILEGES;
-SQL
-              echo "MySQL: usuario metabase creado/actualizado (metabase/mb_pass_123, permisos read-only sobre lab.*)"
+              # Crea/actualiza usuario "metabase" con mysql_native_password y permisos de solo lectura sobre lab.*
+              docker exec -i mysql mysql -uroot -ppass -e "
+                CREATE USER IF NOT EXISTS 'metabase'@'%' IDENTIFIED WITH mysql_native_password BY 'mb_pass_123';
+                GRANT SELECT, SHOW VIEW ON lab.* TO 'metabase'@'%';
+                FLUSH PRIVILEGES;
+              "
+              echo "MySQL: usuario metabase listo (read-only sobre lab.*)"
             ' \
             --query "value[0].message" -o tsv
 
