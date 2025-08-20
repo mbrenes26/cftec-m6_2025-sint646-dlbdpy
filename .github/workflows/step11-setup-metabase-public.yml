@@ -127,22 +127,39 @@ jobs:
             echo "pass=pass" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Create MySQL user for Metabase (native auth)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az vm run-command invoke \
+            --resource-group "$RESOURCE_GROUP" --name "$VM_NAME" \
+            --command-id RunShellScript \
+            --scripts '
+              set -eu
+              docker exec -i mysql mysql -uroot -ppass <<SQL
+CREATE USER IF NOT EXISTS '\''metabase'\''@'\''%'\'' IDENTIFIED WITH mysql_native_password BY '\''mb_pass_123'\'';
+GRANT SELECT, SHOW VIEW ON lab.* TO '\''metabase'\''@'\''%'\'';
+FLUSH PRIVILEGES;
+SQL
+              echo "MySQL: usuario metabase creado/actualizado (metabase/mb_pass_123, permisos read-only sobre lab.*)"
+            ' \
+            --query "value[0].message" -o tsv
+
+
       - name: Seed Metabase via API (runs on VM, local URL; args sin espacios)
         shell: bash
         run: |
           set -euo pipefail
-
-          # email valido y titulo sin espacios (el script los convierte)
           ADMIN_EMAIL="admin@example.com"
           ADMIN_NAME="Admin_User"
           MB_URL="http://127.0.0.1:3000"
 
-          # credenciales MySQL
-          DB_HOST="mysql"; DB_PORT="3306"; DB_NAME="lab"; DB_USER="root"; DB_PASS="pass"
+          # credenciales MySQL para Metabase (usuario nativo)
+          DB_HOST="mysql"; DB_PORT="3306"; DB_NAME="lab"; DB_USER="metabase"; DB_PASS="mb_pass_123"
           DB_DISPLAY="DWH"
           DASH_TITLE="Sentiment_Streaming_Kafka_Mongo_DL_MySQL"
 
-          # password fuerte para Metabase (puedes reemplazar por un Secret si quieres)
+          # password robusto para Metabase (o usa tu Secret)
           MB_PASS="$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 16)"
 
           az vm run-command invoke \
