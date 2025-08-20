@@ -1,154 +1,430 @@
---- a/scripts/setup_metabase_and_seed.sh
-+++ b/scripts/setup_metabase_and_seed.sh
-@@ -94,27 +94,54 @@
- curl_json GET "/api/session/properties"
--# puede ser JSON o vacio si algo raro; verifico cuando lo necesite
--SETUP_TOKEN="$(get_json_value "$RESP_BODY" 'setup_token')"
--[ -z "$SETUP_TOKEN" ] && SETUP_TOKEN="$(get_json_value "$RESP_BODY" 'setup-token' || true)"
--
--SESSION_ID=""
--
--if [ -n "$SETUP_TOKEN" ]; then
--  # Requiere setup
--  echo "[info] instancia sin configurar; realizando /api/setup"
--  FN="$(jescape "$ADMIN_NAME")"
--  EM="$(jescape "$ADMIN_EMAIL")"
--  PW="$(jescape "$ADMIN_PASS")"
--  SN="$(jescape 'Lab')"
--  TK="$(jescape "$SETUP_TOKEN")"
--
--  payload='{"token":"'"$TK"'","user":{"first_name":"'"$FN"'","last_name":"Admin","email":"'"$EM"'","password":"'"$PW"'"}, "prefs":{"site_name":"'"$SN"'"}}'
--
--  curl_json POST "/api/setup" "$payload"
--  code=$(cat "$RESP_CODE")
--  [ "$code" = "200" ] || { echo "Respuesta /api/setup (code=$code):"; cat "$RESP_BODY"; die "/api/setup fallo"; }
--  ensure_json_or_die "$RESP_BODY" "/api/setup"
--  SESSION_ID="$(get_json_value "$RESP_BODY" 'id')"
--  [ -z "$SESSION_ID" ] && die "No se obtuvo session id tras /api/setup"
--  echo "[ok] setup completado; session=$SESSION_ID"
--else
--  # Ya configurado -> login
--  echo "[info] instancia ya configurada; realizando login /api/session"
--  EM="$(jescape "$ADMIN_EMAIL")"
--  PW="$(jescape "$ADMIN_PASS")"
--  payload='{"username":"'"$EM"'","password":"'"$PW"'"}'
--  curl_json POST "/api/session" "$payload"
--  code=$(cat "$RESP_CODE")
--  [ "$code" = "200" ] || { echo "Respuesta /api/session (code=$code):"; cat "$RESP_BODY"; die "login fallo"; }
--  ensure_json_or_die "$RESP_BODY" "/api/session"
--  SESSION_ID="$(get_json_value "$RESP_BODY" 'id')"
--  [ -z "$SESSION_ID" ] && die "No se obtuvo session id tras /api/session"
--  echo "[ok] login; session=$SESSION_ID"
--fi
-+# Puede ser JSON o vacio; obtengo indicadores de estado
-+SETUP_TOKEN="$(get_json_value "$RESP_BODY" 'setup_token')"
-+[ -z "$SETUP_TOKEN" ] && SETUP_TOKEN="$(get_json_value "$RESP_BODY" 'setup-token' || true)"
-+HAS_USER_SETUP="$(get_json_value "$RESP_BODY" 'has_user_setup')"
-+[ -z "$HAS_USER_SETUP" ] && HAS_USER_SETUP="$(get_json_value "$RESP_BODY" 'has-user-setup' || true)"
-+
-+SESSION_ID=""
-+
-+if [ "$HAS_USER_SETUP" = "true" ]; then
-+  # Ya configurado -> login
-+  echo "[info] instancia ya configurada; realizando login /api/session"
-+  EM="$(jescape "$ADMIN_EMAIL")"
-+  PW="$(jescape "$ADMIN_PASS")"
-+  payload='{"username":"'"$EM"'","password":"'"$PW"'"}'
-+  curl_json POST "/api/session" "$payload"
-+  code=$(cat "$RESP_CODE")
-+  [ "$code" = "200" ] || { echo "Respuesta /api/session (code=$code):"; cat "$RESP_BODY"; die "login fallo"; }
-+  ensure_json_or_die "$RESP_BODY" "/api/session"
-+  SESSION_ID="$(get_json_value "$RESP_BODY" 'id')"
-+  [ -z "$SESSION_ID" ] && die "No se obtuvo session id tras /api/session"
-+  echo "[ok] login; session=$SESSION_ID"
-+else
-+  # No configurado segun properties -> intento /api/setup (siempre que haya token)
-+  if [ -z "$SETUP_TOKEN" ]; then
-+    echo "[warn] no hay setup-token pero properties indica instancia no configurada; probare login por si ya existe usuario"
-+    EM="$(jescape "$ADMIN_EMAIL")"
-+    PW="$(jescape "$ADMIN_PASS")"
-+    payload='{"username":"'"$EM"'","password":"'"$PW"'"}'
-+    curl_json POST "/api/session" "$payload"
-+    code=$(cat "$RESP_CODE")
-+    [ "$code" = "200" ] || { echo "Respuesta /api/session (code=$code):"; cat "$RESP_BODY"; die "no se pudo ni setup ni login"; }
-+    ensure_json_or_die "$RESP_BODY" "/api/session"
-+    SESSION_ID="$(get_json_value "$RESP_BODY" 'id')"
-+    [ -z "$SESSION_ID" ] && die "No se obtuvo session id tras /api/session"
-+    echo "[ok] login; session=$SESSION_ID"
-+  else
-+    echo "[info] instancia sin configurar; realizando /api/setup"
-+    FN="$(jescape "$ADMIN_NAME")"
-+    EM="$(jescape "$ADMIN_EMAIL")"
-+    PW="$(jescape "$ADMIN_PASS")"
-+    SN="$(jescape 'Lab')"
-+    TK="$(jescape "$SETUP_TOKEN")"
-+    payload='{"token":"'"$TK"'","user":{"first_name":"'"$FN"'","last_name":"Admin","email":"'"$EM"'","password":"'"$PW"'"}, "prefs":{"site_name":"'"$SN"'"}}'
-+    curl_json POST "/api/setup" "$payload"
-+    code=$(cat "$RESP_CODE")
-+    if [ "$code" = "403" ]; then
-+      echo "[info] /api/setup devolvio 403; parece que ya existe un usuario. Intentando login."
-+      EM="$(jescape "$ADMIN_EMAIL")"
-+      PW="$(jescape "$ADMIN_PASS")"
-+      payload='{"username":"'"$EM"'","password":"'"$PW"'"}'
-+      curl_json POST "/api/session" "$payload"
-+      code=$(cat "$RESP_CODE")
-+      [ "$code" = "200" ] || { echo "Respuesta /api/session (code=$code):"; cat "$RESP_BODY"; die "login fallo tras 403 de setup"; }
-+      ensure_json_or_die "$RESP_BODY" "/api/session"
-+      SESSION_ID="$(get_json_value "$RESP_BODY" 'id')"
-+      [ -z "$SESSION_ID" ] && die "No se obtuvo session id tras /api/session"
-+      echo "[ok] login; session=$SESSION_ID"
-+    else
-+      [ "$code" = "200" ] || { echo "Respuesta /api/setup (code=$code):"; cat "$RESP_BODY"; die "/api/setup fallo"; }
-+      ensure_json_or_die "$RESP_BODY" "/api/setup"
-+      # Hago login explicito para obtener un session id fiable
-+      EM="$(jescape "$ADMIN_EMAIL")"
-+      PW="$(jescape "$ADMIN_PASS")"
-+      payload='{"username":"'"$EM"'","password":"'"$PW"'"}'
-+      curl_json POST "/api/session" "$payload"
-+      code=$(cat "$RESP_CODE")
-+      [ "$code" = "200" ] || { echo "Respuesta /api/session (code=$code):"; cat "$RESP_BODY"; die "login fallo tras setup"; }
-+      ensure_json_or_die "$RESP_BODY" "/api/session"
-+      SESSION_ID="$(get_json_value "$RESP_BODY" 'id')"
-+      [ -z "$SESSION_ID" ] && die "No se obtuvo session id tras /api/session"
-+      echo "[ok] setup completado y login; session=$SESSION_ID"
-+    fi
-+  fi
-+fi
-@@ -141,15 +168,23 @@
--# buscar por nombre
--DB_ID="$(python3 - "$RESP_BODY" "$DB_DISPLAY" <<'PY' || true
-+# buscar por nombre (soporta respuesta como lista o como objeto con .data)
-+DB_ID="$(python3 - "$RESP_BODY" "$DB_DISPLAY" <<'PY' || true
- import sys, json
- fn, name = sys.argv[1], sys.argv[2]
- try:
--    arr=json.loads(open(fn,'r',encoding='utf-8').read())
-+    obj=json.loads(open(fn,'r',encoding='utf-8').read())
-+    if isinstance(obj, list):
-+        arr = obj
-+    elif isinstance(obj, dict):
-+        arr = obj.get('data', [])
-+    else:
-+        arr = []
-     for d in arr:
-         if isinstance(d, dict) and d.get('name')==name:
-             print(d.get('id',''))
-             break
- except Exception:
-     pass
- PY
- )"
-@@ -177,6 +212,13 @@
-   ensure_json_or_die "$RESP_BODY" "/api/database POST"
-   DB_ID="$(get_json_value "$RESP_BODY" 'id')"
-   [ -z "$DB_ID" ] && die "No se obtuvo DB_ID tras crear DB"
-+  # opcional: lanzar sincronizacion de esquema
-+  curl_json_auth POST "/api/database/$DB_ID/sync_schema" "$SESSION_ID" '{}'
-+  sc_code=$(cat "$RESP_CODE")
-+  if [ "$sc_code" = "200" ] || [ "$sc_code" = "202" ]; then
-+    echo "[ok] sync_schema disparado para DB id=$DB_ID"
-+  else
-+    echo "[warn] sync_schema code=$sc_code (continuo)"
-   else
-   echo "[ok] DB ya existe id=$DB_ID"
- fi
+#!/usr/bin/env sh
+# scripts/setup_metabase_and_seed.sh
+# Idempotente: inicializa Metabase (admin), crea conexion MySQL, 3 cards y 1 dashboard.
+# Uso / Argumentos:
+#  1 ADMIN_EMAIL
+#  2 ADMIN_PASS
+#  3 ADMIN_NAME            (usar underscores; aqui se convierten a espacios)
+#  4 MB_URL                (ej: http://127.0.0.1:3000)
+#  5 DB_HOST               (ej: mysql)
+#  6 DB_PORT               (ej: 3306)
+#  7 DB_NAME               (ej: lab)
+#  8 DB_USER               (ej: metabase)
+#  9 DB_PASS               (ej: mb_pass_123)
+# 10 DB_DISPLAY            (nombre logico de la conexion en Metabase)
+# 11 DASH_TITLE            (usar underscores; aqui se convierten a espacios)
+
+set -eu
+
+# -------------------------------
+# Args
+# -------------------------------
+ADMIN_EMAIL="${1:?arg1 ADMIN_EMAIL requerido}"
+ADMIN_PASS="${2:?arg2 ADMIN_PASS requerido}"
+ADMIN_NAME_RAW="${3:?arg3 ADMIN_NAME requerido}"
+MB_URL="${4:?arg4 MB_URL requerido}"
+DB_HOST="${5:?arg5 DB_HOST requerido}"
+DB_PORT="${6:?arg6 DB_PORT requerido}"
+DB_NAME="${7:?arg7 DB_NAME requerido}"
+DB_USER="${8:?arg8 DB_USER requerido}"
+DB_PASS="${9:?arg9 DB_PASS requerido}"
+DB_DISPLAY="${10:?arg10 DB_DISPLAY requerido}"
+DASH_TITLE_RAW="${11:?arg11 DASH_TITLE requerido}"
+
+ADMIN_NAME=$(printf %s "$ADMIN_NAME_RAW" | tr '_' ' ')
+DASH_TITLE=$(printf %s "$DASH_TITLE_RAW" | tr '_' ' ')
+
+# -------------------------------
+# Utils
+# -------------------------------
+TMPDIR="${TMPDIR:-/tmp}"
+RESP_BODY="$TMPDIR/mb_resp_body.$$"
+RESP_CODE="$TMPDIR/mb_resp_code.$$"
+
+cleanup() {
+  rm -f "$RESP_BODY" "$RESP_CODE" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+die() {
+  echo "ERROR: $*" >&2
+  exit 1
+}
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+ensure_python3() {
+  if ! have python3; then
+    if have apt-get; then
+      echo "[info] instalando python3 via apt-get"
+      apt-get update -y >/dev/null 2>&1 || true
+      apt-get install -y python3 >/dev/null 2>&1 || true
+    fi
+  fi
+  have python3 || die "python3 no disponible"
+}
+
+jescape() {
+  # Escapa para JSON sin jq
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+# curl_json METHOD PATH [DATA_JSON]
+curl_json() {
+  method="$1"; path="$2"; data="${3:-}"; url="$MB_URL$path"
+  if [ -n "$data" ]; then
+    curl -sS -m 20 -w '%{http_code}' -o "$RESP_BODY" \
+      -H 'Content-Type: application/json' \
+      -X "$method" "$url" --data "$data" > "$RESP_CODE" || true
+  else
+    curl -sS -m 20 -w '%{http_code}' -o "$RESP_BODY" \
+      -H 'Content-Type: application/json' \
+      -X "$method" "$url" > "$RESP_CODE" || true
+  fi
+}
+
+# curl_json_auth METHOD PATH TOKEN [DATA_JSON]
+curl_json_auth() {
+  method="$1"; path="$2"; token="$3"; data="${4:-}"; url="$MB_URL$path"
+  if [ -n "$data" ]; then
+    curl -sS -m 25 -w '%{http_code}' -o "$RESP_BODY" \
+      -H 'Content-Type: application/json' \
+      -H "X-Metabase-Session: $token" \
+      -X "$method" "$url" --data "$data" > "$RESP_CODE" || true
+  else
+    curl -sS -m 25 -w '%{http_code}' -o "$RESP_BODY" \
+      -H 'Content-Type: application/json' \
+      -H "X-Metabase-Session: $token" \
+      -X "$method" "$url" > "$RESP_CODE" || true
+  fi
+}
+
+# get_json_value FILE KEY
+get_json_value() {
+  file="$1"; key="$2"
+  python3 - "$file" "$key" <<'PY' || true
+import sys, json
+fn, key = sys.argv[1], sys.argv[2]
+try:
+    s=open(fn,'r',encoding='utf-8').read().strip()
+    if not s:
+        print(""); sys.exit(0)
+    obj=json.loads(s)
+    if isinstance(obj, dict):
+        if key in obj:
+            print(obj.get(key,"")); sys.exit(0)
+        alt = key.replace('_','-')
+        if alt in obj:
+            print(obj.get(alt,"")); sys.exit(0)
+        for v in obj.values():
+            if isinstance(v, dict) and key in v:
+                print(v.get(key,"")); sys.exit(0)
+    print("")
+except Exception:
+    print("")
+PY
+}
+
+ensure_json_or_die() {
+  f="$1"; ctx="$2"
+  python3 - "$f" "$ctx" <<'PY' || ( print("Respuesta no JSON en contexto dado"); sys.exit(1) )
+import sys, json
+fn=sys.argv[1]
+s=open(fn,'r',encoding='utf-8').read().strip()
+if s:
+    json.loads(s)
+PY
+}
+
+ensure_python3
+
+# -------------------------------
+# 0) Healthcheck Metabase
+# -------------------------------
+curl_json GET "/api/health"
+code=$(cat "$RESP_CODE")
+if [ "$code" != "200" ]; then
+  echo "[info] esperando Metabase en $MB_URL ..."
+  start=$(date +%s)
+  while :; do
+    curl_json GET "/api/health"
+    code=$(cat "$RESP_CODE")
+    [ "$code" = "200" ] && break
+    now=$(date +%s)
+    [ $((now-start)) -ge 240 ] && die "Metabase no listo tras 240s (code=$code)"
+    sleep 3
+  done
+fi
+echo "[ok] /api/health 200"
+
+# -------------------------------
+# 1) Decidir setup vs login
+# -------------------------------
+curl_json GET "/api/session/properties"
+SETUP_TOKEN="$(get_json_value "$RESP_BODY" 'setup_token')"
+[ -z "$SETUP_TOKEN" ] && SETUP_TOKEN="$(get_json_value "$RESP_BODY" 'setup-token' || true)"
+HAS_USER_SETUP="$(get_json_value "$RESP_BODY" 'has_user_setup')"
+[ -z "$HAS_USER_SETUP" ] && HAS_USER_SETUP="$(get_json_value "$RESP_BODY" 'has-user-setup' || true)"
+
+SESSION_ID=""
+
+login() {
+  EM="$(jescape "$ADMIN_EMAIL")"
+  PW="$(jescape "$ADMIN_PASS")"
+  payload='{"username":"'"$EM"'","password":"'"$PW"'"}'
+  curl_json POST "/api/session" "$payload"
+  c=$(cat "$RESP_CODE")
+  [ "$c" = "200" ] || { echo "Respuesta /api/session (code=$c):"; cat "$RESP_BODY"; die "login fallo"; }
+  ensure_json_or_die "$RESP_BODY" "/api/session"
+  SESSION_ID="$(get_json_value "$RESP_BODY" 'id')"
+  [ -z "$SESSION_ID" ] && die "No se obtuvo session id tras /api/session"
+  echo "[ok] login; session=$SESSION_ID"
+}
+
+if [ "$HAS_USER_SETUP" = "true" ]; then
+  echo "[info] instancia ya configurada; login"
+  login
+else
+  if [ -z "$SETUP_TOKEN" ]; then
+    echo "[warn] no hay setup-token; intentare login directo"
+    login
+  else
+    echo "[info] instancia sin configurar; /api/setup"
+    FN="$(jescape "$ADMIN_NAME")"
+    EM="$(jescape "$ADMIN_EMAIL")"
+    PW="$(jescape "$ADMIN_PASS")"
+    SN="$(jescape 'Lab')"
+    TK="$(jescape "$SETUP_TOKEN")"
+    payload='{"token":"'"$TK"'","user":{"first_name":"'"$FN"'","last_name":"Admin","email":"'"$EM"'","password":"'"$PW"'"}, "prefs":{"site_name":"'"$SN"'"}}'
+    curl_json POST "/api/setup" "$payload"
+    c=$(cat "$RESP_CODE")
+    if [ "$c" = "403" ]; then
+      echo "[info] /api/setup 403; parece que ya existe usuario; login"
+      login
+    else
+      [ "$c" = "200" ] || { echo "Respuesta /api/setup (code=$c):"; cat "$RESP_BODY"; die "/api/setup fallo"; }
+      ensure_json_or_die "$RESP_BODY" "/api/setup"
+      # Login explicito para obtener session id fiable
+      login
+    fi
+  fi
+fi
+
+# -------------------------------
+# 2) Asegurar conexion MySQL
+# -------------------------------
+curl_json_auth GET "/api/database" "$SESSION_ID"
+c=$(cat "$RESP_CODE")
+[ "$c" = "200" ] || { echo "Respuesta /api/database (GET) code=$c:"; cat "$RESP_BODY"; die "listar DBs fallo"; }
+
+DB_ID="$(python3 - "$RESP_BODY" "$DB_DISPLAY" <<'PY' || true
+import sys, json
+fn, name = sys.argv[1], sys.argv[2]
+try:
+    obj=json.loads(open(fn,'r',encoding='utf-8').read())
+    if isinstance(obj, list):
+        arr = obj
+    elif isinstance(obj, dict):
+        arr = obj.get('data', [])
+    else:
+        arr = []
+    for d in arr:
+        if isinstance(d, dict) and d.get('name') == name:
+            print(d.get('id','')); break
+except Exception:
+    pass
+PY
+)"
+
+if [ -z "$DB_ID" ]; then
+  echo "[info] creando conexion MySQL '${DB_DISPLAY}'"
+  payload=$(cat <<JSON
+{
+  "engine": "mysql",
+  "name": "$(jescape "$DB_DISPLAY")",
+  "details": {
+    "host": "$(jescape "$DB_HOST")",
+    "port": $DB_PORT,
+    "dbname": "$(jescape "$DB_NAME")",
+    "user": "$(jescape "$DB_USER")",
+    "password": "$(jescape "$DB_PASS")",
+    "ssl": false
+  },
+  "is_full_sync": true,
+  "is_on_demand": false,
+  "schedules": {}
+}
+JSON
+)
+  curl_json_auth POST "/api/database" "$SESSION_ID" "$payload"
+  c=$(cat "$RESP_CODE")
+  [ "$c" = "200" ] || [ "$c" = "201" ] || { echo "Respuesta /api/database (POST) code=$c:"; cat "$RESP_BODY"; die "crear DB fallo"; }
+  ensure_json_or_die "$RESP_BODY" "/api/database POST"
+  DB_ID="$(get_json_value "$RESP_BODY" 'id')"
+  [ -z "$DB_ID" ] && die "No se obtuvo DB_ID tras crear DB"
+  # Disparar sincronizacion de esquema (opcional)
+  curl_json_auth POST "/api/database/$DB_ID/sync_schema" "$SESSION_ID" '{}'
+  sc=$(cat "$RESP_CODE")
+  if [ "$sc" = "200" ] || [ "$sc" = "202" ]; then
+    echo "[ok] sync_schema disparado para DB id=$DB_ID"
+  else
+    echo "[warn] sync_schema code=$sc (continuo)"
+  fi
+else
+  echo "[ok] DB ya existe id=$DB_ID"
+fi
+
+# -------------------------------
+# 3) Cards (SQL nativas) y Dashboard
+# -------------------------------
+make_card() {
+  title="$1"; sql="$2"
+  # Buscar card por nombre
+  curl_json_auth GET "/api/card" "$SESSION_ID"
+  c=$(cat "$RESP_CODE")
+  [ "$c" = "200" ] || { echo "Respuesta /api/card (GET) code=$c:"; cat "$RESP_BODY"; die "listar cards fallo"; }
+  CARD_ID="$(python3 - "$RESP_BODY" "$title" <<'PY' || true
+import sys, json
+fn, name = sys.argv[1], sys.argv[2]
+try:
+    arr=json.loads(open(fn,'r',encoding='utf-8').read())
+    if isinstance(arr, dict): arr = arr.get('data', [])
+    for d in arr:
+        if isinstance(d, dict) and d.get('name') == name:
+            print(d.get('id','')); break
+except Exception:
+    pass
+PY
+)"
+  if [ -n "$CARD_ID" ]; then
+    echo "[ok] card existe '$title' id=$CARD_ID"
+    return 0
+  fi
+  echo "[info] creando card '$title'"
+  name_json="$(jescape "$title")"
+  sql_json="$(jescape "$sql")"
+  payload=$(cat <<JSON
+{
+  "name": "$name_json",
+  "dataset_query": {
+    "type": "native",
+    "native": { "query": "$sql_json" },
+    "database": $DB_ID
+  },
+  "display": "table",
+  "visualization_settings": {}
+}
+JSON
+)
+  curl_json_auth POST "/api/card" "$SESSION_ID" "$payload"
+  c=$(cat "$RESP_CODE")
+  [ "$c" = "200" ] || [ "$c" = "201" ] || { echo "Respuesta /api/card (POST) code=$c:"; cat "$RESP_BODY"; die "crear card fallo"; }
+  ensure_json_or_die "$RESP_BODY" "/api/card POST"
+  CARD_ID="$(get_json_value "$RESP_BODY" 'id')"
+  [ -z "$CARD_ID" ] && die "No se obtuvo CARD_ID al crear card '$title'"
+  echo "[ok] card creada '$title' id=$CARD_ID"
+}
+
+ensure_dashboard() {
+  title="$1"
+  curl_json_auth GET "/api/dashboard" "$SESSION_ID"
+  c=$(cat "$RESP_CODE")
+  [ "$c" = "200" ] || { echo "Respuesta /api/dashboard (GET) code=$c:"; cat "$RESP_BODY"; die "listar dashboards fallo"; }
+  DASH_ID="$(python3 - "$RESP_BODY" "$title" <<'PY' || true
+import sys, json
+fn, name = sys.argv[1], sys.argv[2]
+try:
+    arr=json.loads(open(fn,'r',encoding='utf-8').read())
+    if isinstance(arr, dict): arr = arr.get('data', [])
+    for d in arr:
+        if isinstance(d, dict) and d.get('name') == name:
+            print(d.get('id','')); break
+except Exception:
+    pass
+PY
+)"
+  if [ -n "$DASH_ID" ]; then
+    echo "[ok] dashboard existe '$title' id=$DASH_ID"
+    return 0
+  fi
+  echo "[info] creando dashboard '$title'"
+  name_json="$(jescape "$title")"
+  payload='{ "name": "'"$name_json"'" }'
+  curl_json_auth POST "/api/dashboard" "$SESSION_ID" "$payload"
+  c=$(cat "$RESP_CODE")
+  [ "$c" = "200" ] || [ "$c" = "201" ] || { echo "Respuesta /api/dashboard (POST) code=$c:"; cat "$RESP_BODY"; die "crear dashboard fallo"; }
+  ensure_json_or_die "$RESP_BODY" "/api/dashboard POST"
+  DASH_ID="$(get_json_value "$RESP_BODY" 'id')"
+  [ -z "$DASH_ID" ] && die "No se obtuvo DASH_ID"
+  echo "[ok] dashboard creado '$title' id=$DASH_ID"
+}
+
+add_card_to_dashboard() {
+  dash_id="$1"; card_id="$2"; col="${3:-0}"; row="${4:-0}"; sizeX="${5:-12}"; sizeY="${6:-8}"
+  # Verificar si ya esta agregada
+  curl_json_auth GET "/api/dashboard/$dash_id" "$SESSION_ID"
+  c=$(cat "$RESP_CODE")
+  [ "$c" = "200" ] || { echo "Respuesta /api/dashboard/:id (GET) code=$c:"; cat "$RESP_BODY"; die "leer dashboard fallo"; }
+  present="$(python3 - "$RESP_BODY" "$card_id" <<'PY' || true
+import sys, json
+fn, cid = sys.argv[1], sys.argv[2]
+try:
+    d=json.loads(open(fn,'r',encoding='utf-8').read())
+    for oc in d.get('ordered_cards', []):
+        if str(oc.get('card_id','')) == str(cid):
+            print("yes"); break
+except Exception:
+    pass
+PY
+)"
+  if [ "$present" = "yes" ]; then
+    echo "[ok] card $card_id ya esta en dashboard $dash_id"
+    return 0
+  fi
+  echo "[info] agregando card $card_id a dashboard $dash_id"
+  payload=$(cat <<JSON
+{
+  "cardId": $card_id,
+  "row": $row,
+  "col": $col,
+  "sizeX": $sizeX,
+  "sizeY": $sizeY,
+  "parameter_mappings": [],
+  "visualization_settings": {}
+}
+JSON
+)
+  curl_json_auth POST "/api/dashboard/$dash_id/cards" "$SESSION_ID" "$payload"
+  c=$(cat "$RESP_CODE")
+  [ "$c" = "200" ] || [ "$c" = "201" ] || { echo "Respuesta /api/dashboard/:id/cards (POST) code=$c:"; cat "$RESP_BODY"; die "agregar card a dashboard fallo"; }
+  echo "[ok] card $card_id agregada a dashboard $dash_id"
+}
+
+# Cards de ejemplo basadas en information_schema
+CARD1_TITLE="Tables in ${DB_NAME}"
+CARD1_SQL="SELECT TABLE_SCHEMA, TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA='${DB_NAME}' ORDER BY TABLE_NAME LIMIT 100;"
+
+CARD2_TITLE="Tables count in ${DB_NAME}"
+CARD2_SQL="SELECT COUNT(*) AS tables_count FROM information_schema.tables WHERE TABLE_SCHEMA='${DB_NAME}';"
+
+CARD3_TITLE="Top 20 by rows in ${DB_NAME}"
+CARD3_SQL="SELECT TABLE_NAME, TABLE_ROWS FROM information_schema.tables WHERE TABLE_SCHEMA='${DB_NAME}' ORDER BY TABLE_ROWS DESC LIMIT 20;"
+
+make_card "$CARD1_TITLE" "$CARD1_SQL"
+CARD1_ID="$CARD_ID"
+
+make_card "$CARD2_TITLE" "$CARD2_SQL"
+CARD2_ID="$CARD_ID"
+
+make_card "$CARD3_TITLE" "$CARD3_SQL"
+CARD3_ID="$CARD_ID"
+
+ensure_dashboard "$DASH_TITLE"
+DASH_ID="$DASH_ID"
+
+# Layout simple
+add_card_to_dashboard "$DASH_ID" "$CARD2_ID" 0 0 6 6
+add_card_to_dashboard "$DASH_ID" "$CARD1_ID" 6 0 12 10
+add_card_to_dashboard "$DASH_ID" "$CARD3_ID" 0 10 12 10
+
+echo "OK: Metabase listo; DB '${DB_DISPLAY}' asegurada; dashboard '${DASH_TITLE}' con 3 cards."
