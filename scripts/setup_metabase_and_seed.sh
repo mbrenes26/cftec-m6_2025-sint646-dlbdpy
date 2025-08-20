@@ -287,7 +287,7 @@ print(urllib.parse.quote(sys.argv[1], safe=""))
 PY
 }
 
-# Busca una card por nombre usando /api/search. Retorna id o vacio (solo ID en stdout).
+# Busca una card por nombre. Imprime ID o vacio (solo ID en stdout).
 find_card_by_name() {
   title="$1"
   q="$(urlencode "$title")"
@@ -314,7 +314,7 @@ except Exception:
 PY
 }
 
-# Crea o devuelve id de una card nativa (solo ID en stdout)
+# Crea card nativa si no existe. Imprime ID (solo ID en stdout).
 make_card() {
   title="$1"; sql="$2"
 
@@ -357,7 +357,7 @@ JSON
   die "crear card fallo para '$title'"
 }
 
-# Dashboard: buscar por nombre; si no existe, crearlo (solo ID en stdout)
+# Dashboard: buscar por nombre. Imprime ID o vacio.
 find_dashboard_by_name() {
   title="$1"
   q="$(urlencode "$title")"
@@ -384,6 +384,7 @@ except Exception:
 PY
 }
 
+# Crea dashboard. Imprime ID.
 create_dashboard() {
   title="$1"
   payload='{ "name": "'"$(jescape "$title")"'" }'
@@ -394,50 +395,54 @@ create_dashboard() {
   get_json_value "$RESP_BODY" 'id'
 }
 
-# Define tus 3 consultas SQL
-SQL_1="SELECT COUNT(*) AS total_msgs FROM tweets;"
-SQL_2="SELECT sentiment, COUNT(*) AS c FROM tweets GROUP BY sentiment ORDER BY c DESC;"
-SQL_3="SELECT DATE(created_at) AS dia, COUNT(*) AS c FROM tweets GROUP BY dia ORDER BY dia;"
+# Devuelve 0 si el dashboard ya contiene la card, 1 si no.
+dashboard_has_card() {
+  dash_id="$1"; card_id="$2"
+  curl_json_auth GET "/api/dashboard/$dash_id" "$SESSION_ID"
+  code=$(cat "$RESP_CODE")
+  [ "$code" = "200" ] || { echo "Respuesta /api/dashboard/$dash_id code=$code:" >&2; cat "$RESP_BODY" >&2; die "leer dashboard fallo"; }
+  ensure_json_or_die "$RESP_BODY" "/api/dashboard GET"
+  python3 - "$RESP_BODY" "$card_id" <<'PY'
+import sys, json
+fn, cid = sys.argv[1], int(sys.argv[2])
+obj = json.loads(open(fn,'r',encoding='utf-8').read())
+cards = obj.get('ordered_cards') or obj.get('dashcards') or []
+print(any(isinstance(dc, dict) and dc.get('card_id') == cid for dc in cards))
+PY
+}
 
-# Obtener IDs (solo numeros)
-C1_ID="$(make_card "Total mensajes" "$SQL_1")"
-C2_ID="$(make_card "Conteo por sentimiento" "$SQL_2")"
-C3_ID="$(make_card "Mensajes por dia" "$SQL_3")"
-
-# Validar que sean numericos
-case "$C1_ID$C2_ID$C3_ID" in *[!0-9]*) die "IDs de cards no validos: '$C1_ID' '$C2_ID' '$C3_ID'";; esac
-
-DASH_ID="$(find_dashboard_by_name "$DASH_TITLE" || true)"
-if [ -z "$DASH_ID" ]; then
-  DASH_ID="$(create_dashboard "$DASH_TITLE")"
-  echo "[ok] dashboard creado id=$DASH_ID" >&2
-else
-  echo "[ok] dashboard existe id=$DASH_ID" >&2
-fi
-case "$DASH_ID" in *[!0-9]*) die "ID de dashboard no valido: '$DASH_ID'";; esac
-
-# Agregar cards al dashboard
+# Agrega una card con PUT /api/dashboard/:id/cards (idempotente)
 add_card_to_dashboard() {
   dash_id="$1"; card_id="$2"; x="$3"; y="$4"; w="$5"; h="$6"
+
+  if [ "$(dashboard_has_card "$dash_id" "$card_id")" = "True" ]; then
+    echo "[ok] dashboard $dash_id ya contiene card $card_id" >&2
+    return 0
+  fi
+
   payload=$(cat <<JSON
 {
-  "dashboard_id": $dash_id,
-  "card_id": $card_id,
-  "row": $y,
-  "col": $x,
-  "size_x": $w,
-  "size_y": $h,
-  "visualization_settings": {}
+  "ordered_tabs": [],
+  "cards": [
+    {
+      "id": -1,
+      "card_id": $card_id,
+      "row": $y,
+      "col": $x,
+      "size_x": $w,
+      "size_y": $h,
+      "series": [],
+      "parameter_mappings": [],
+      "visualization_settings": {}
+    }
+  ]
 }
 JSON
 )
-  curl_json_auth POST "/api/dashboard/$dash_id/cards" "$SESSION_ID" "$payload"
+  curl_json_auth PUT "/api/dashboard/$dash_id/cards" "$SESSION_ID" "$payload"
   code=$(cat "$RESP_CODE")
-  [ "$code" = "200" ] || [ "$code" = "201" ] || { echo "Respuesta /api/dashboard/$dash_id/cards code=$code:" >&2; cat "$RESP_BODY" >&2; die "agregar card al dashboard fallo"; }
+  [ "$code" = "200" ] || { echo "Respuesta /api/dashboard/$dash_id/cards code=$code:" >&2; cat "$RESP_BODY" >&2; die "agregar card al dashboard fallo"; }
+  echo "[ok] card $card_id agregada al dashboard $dash_id" >&2
 }
 
-# Layout basico
-add_card_to_dashboard "$DASH_ID" "$C1_ID" 0 0 8 4
-add_card_to_dashboard "$DASH_ID" "$C2_ID" 8 0 8 4
-add_card_to_dashboard "$DASH_ID" "$C3_ID" 0 4 16 6
-echo "[ok] cards agregadas al dashboard" >&2
+# ---- Definicion de consultas SQL (MySQL) -
