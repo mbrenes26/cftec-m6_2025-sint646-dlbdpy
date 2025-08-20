@@ -276,7 +276,7 @@ else
 fi
 
 # -------------------------------
-# 3) Crear tarjetas SQL nativas y dashboard (idempotente)
+# 3) Crear tarjetas SQL nativas y dashboard (idempotente, stdout=solo IDs)
 # -------------------------------
 
 # helper: urlencode
@@ -287,13 +287,18 @@ print(urllib.parse.quote(sys.argv[1], safe=""))
 PY
 }
 
-# Busca una card por nombre usando /api/search. Retorna id o vacio.
+# Busca una card por nombre usando /api/search. Retorna id o vacio (solo ID en stdout).
 find_card_by_name() {
   title="$1"
   q="$(urlencode "$title")"
   curl_json_auth GET "/api/search?q=$q&type=card&archived=false" "$SESSION_ID"
   code=$(cat "$RESP_CODE")
-  [ "$code" = "200" ] || { echo "[warn] /api/search (card) code=$code"; cat "$RESP_BODY"; echo ""; echo ""; return 1; }
+  if [ "$code" != "200" ]; then
+    echo "[warn] /api/search (card) code=$code" >&2
+    cat "$RESP_BODY" >&2
+    echo "" >&2
+    return 0
+  fi
   ensure_json_or_die "$RESP_BODY" "/api/search (card)"
   python3 - "$RESP_BODY" "$title" <<'PY' || true
 import sys, json
@@ -309,18 +314,17 @@ except Exception:
 PY
 }
 
-# Crea o devuelve id de una card nativa
+# Crea o devuelve id de una card nativa (solo ID en stdout)
 make_card() {
   title="$1"; sql="$2"
-  # Existe?
+
   CID="$(find_card_by_name "$title" || true)"
   if [ -n "$CID" ]; then
-    echo "[ok] card existe '$title' id=$CID"
-    echo "$CID"
+    echo "[ok] card existe '$title' id=$CID" >&2
+    printf '%s\n' "$CID"
     return 0
   fi
 
-  # Crear
   payload=$(cat <<JSON
 {
   "name": "$(jescape "$title")",
@@ -341,35 +345,30 @@ JSON
     ensure_json_or_die "$RESP_BODY" "/api/card POST"
     CID="$(get_json_value "$RESP_BODY" 'id')"
     [ -z "$CID" ] && die "No se obtuvo card id tras crear '$title'"
-    echo "[ok] card creada '$title' id=$CID"
-    echo "$CID"
+    echo "[ok] card creada '$title' id=$CID" >&2
+    printf '%s\n' "$CID"
     return 0
   fi
 
-  # Si fallo por duplicado u otro 4xx/5xx, intento recuperar por busqueda
-  echo "[warn] crear card '$title' code=$code; cuerpo:"
-  cat "$RESP_BODY"; echo
+  echo "[warn] crear card '$title' code=$code" >&2
+  cat "$RESP_BODY" >&2
   CID="$(find_card_by_name "$title" || true)"
-  [ -n "$CID" ] && { echo "[ok] card ya existia '$title' id=$CID"; echo "$CID"; return 0; }
+  [ -n "$CID" ] && { echo "[ok] card ya existia '$title' id=$CID" >&2; printf '%s\n' "$CID"; return 0; }
   die "crear card fallo para '$title'"
 }
 
-# Define aqui tus 3 consultas SQL (ejemplos; usa las tuyas reales)
-SQL_1="SELECT COUNT(*) AS total_msgs FROM tweets;"
-SQL_2="SELECT sentiment, COUNT(*) AS c FROM tweets GROUP BY sentiment ORDER BY c DESC;"
-SQL_3="SELECT created_at::date AS dia, COUNT(*) AS c FROM tweets GROUP BY dia ORDER BY dia;"
-
-C1_ID="$(make_card "Total mensajes" "$SQL_1")"
-C2_ID="$(make_card "Conteo por sentimiento" "$SQL_2")"
-C3_ID="$(make_card "Mensajes por dia" "$SQL_3")"
-
-# Dashboard: buscar por nombre; si no existe, crearlo
+# Dashboard: buscar por nombre; si no existe, crearlo (solo ID en stdout)
 find_dashboard_by_name() {
   title="$1"
   q="$(urlencode "$title")"
   curl_json_auth GET "/api/search?q=$q&type=dashboard&archived=false" "$SESSION_ID"
   code=$(cat "$RESP_CODE")
-  [ "$code" = "200" ] || { echo "[warn] /api/search (dashboard) code=$code"; cat "$RESP_BODY"; echo ""; echo ""; return 1; }
+  if [ "$code" != "200" ]; then
+    echo "[warn] /api/search (dashboard) code=$code" >&2
+    cat "$RESP_BODY" >&2
+    echo "" >&2
+    return 0
+  fi
   ensure_json_or_die "$RESP_BODY" "/api/search (dashboard)"
   python3 - "$RESP_BODY" "$title" <<'PY' || true
 import sys, json
@@ -390,20 +389,34 @@ create_dashboard() {
   payload='{ "name": "'"$(jescape "$title")"'" }'
   curl_json_auth POST "/api/dashboard" "$SESSION_ID" "$payload"
   code=$(cat "$RESP_CODE")
-  [ "$code" = "200" ] || [ "$code" = "201" ] || { echo "Respuesta /api/dashboard code=$code:"; cat "$RESP_BODY"; die "crear dashboard fallo"; }
+  [ "$code" = "200" ] || [ "$code" = "201" ] || { echo "Respuesta /api/dashboard code=$code:" >&2; cat "$RESP_BODY" >&2; die "crear dashboard fallo"; }
   ensure_json_or_die "$RESP_BODY" "/api/dashboard POST"
   get_json_value "$RESP_BODY" 'id'
 }
 
+# Define tus 3 consultas SQL
+SQL_1="SELECT COUNT(*) AS total_msgs FROM tweets;"
+SQL_2="SELECT sentiment, COUNT(*) AS c FROM tweets GROUP BY sentiment ORDER BY c DESC;"
+SQL_3="SELECT DATE(created_at) AS dia, COUNT(*) AS c FROM tweets GROUP BY dia ORDER BY dia;"
+
+# Obtener IDs (solo numeros)
+C1_ID="$(make_card "Total mensajes" "$SQL_1")"
+C2_ID="$(make_card "Conteo por sentimiento" "$SQL_2")"
+C3_ID="$(make_card "Mensajes por dia" "$SQL_3")"
+
+# Validar que sean numericos
+case "$C1_ID$C2_ID$C3_ID" in *[!0-9]*) die "IDs de cards no validos: '$C1_ID' '$C2_ID' '$C3_ID'";; esac
+
 DASH_ID="$(find_dashboard_by_name "$DASH_TITLE" || true)"
 if [ -z "$DASH_ID" ]; then
   DASH_ID="$(create_dashboard "$DASH_TITLE")"
-  echo "[ok] dashboard creado id=$DASH_ID"
+  echo "[ok] dashboard creado id=$DASH_ID" >&2
 else
-  echo "[ok] dashboard existe id=$DASH_ID"
+  echo "[ok] dashboard existe id=$DASH_ID" >&2
 fi
+case "$DASH_ID" in *[!0-9]*) die "ID de dashboard no valido: '$DASH_ID'";; esac
 
-# Agregar cards al dashboard (add parameterized)
+# Agregar cards al dashboard
 add_card_to_dashboard() {
   dash_id="$1"; card_id="$2"; x="$3"; y="$4"; w="$5"; h="$6"
   payload=$(cat <<JSON
@@ -420,11 +433,11 @@ JSON
 )
   curl_json_auth POST "/api/dashboard/$dash_id/cards" "$SESSION_ID" "$payload"
   code=$(cat "$RESP_CODE")
-  [ "$code" = "200" ] || [ "$code" = "201" ] || { echo "Respuesta /api/dashboard/$dash_id/cards code=$code:"; cat "$RESP_BODY"; die "agregar card al dashboard fallo"; }
+  [ "$code" = "200" ] || [ "$code" = "201" ] || { echo "Respuesta /api/dashboard/$dash_id/cards code=$code:" >&2; cat "$RESP_BODY" >&2; die "agregar card al dashboard fallo"; }
 }
 
-# Layout basico 3 widgets
+# Layout basico
 add_card_to_dashboard "$DASH_ID" "$C1_ID" 0 0 8 4
 add_card_to_dashboard "$DASH_ID" "$C2_ID" 8 0 8 4
 add_card_to_dashboard "$DASH_ID" "$C3_ID" 0 4 16 6
-echo "[ok] cards agregadas al dashboard"
+echo "[ok] cards agregadas al dashboard" >&2
