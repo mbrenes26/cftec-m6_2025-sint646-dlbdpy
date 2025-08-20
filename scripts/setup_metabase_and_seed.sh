@@ -276,156 +276,155 @@ else
 fi
 
 # -------------------------------
-# 3) Cards (SQL nativas) y Dashboard
+# 3) Crear tarjetas SQL nativas y dashboard (idempotente)
 # -------------------------------
-make_card() {
-  title="$1"; sql="$2"
-  # Buscar card por nombre
-  curl_json_auth GET "/api/card" "$SESSION_ID"
-  c=$(cat "$RESP_CODE")
-  [ "$c" = "200" ] || { echo "Respuesta /api/card (GET) code=$c:"; cat "$RESP_BODY"; die "listar cards fallo"; }
-  CARD_ID="$(python3 - "$RESP_BODY" "$title" <<'PY' || true
+
+# helper: urlencode
+urlencode() {
+  python3 - "$1" <<'PY'
+import sys, urllib.parse
+print(urllib.parse.quote(sys.argv[1], safe=""))
+PY
+}
+
+# Busca una card por nombre usando /api/search. Retorna id o vacio.
+find_card_by_name() {
+  title="$1"
+  q="$(urlencode "$title")"
+  curl_json_auth GET "/api/search?q=$q&type=card&archived=false" "$SESSION_ID"
+  code=$(cat "$RESP_CODE")
+  [ "$code" = "200" ] || { echo "[warn] /api/search (card) code=$code"; cat "$RESP_BODY"; echo ""; echo ""; return 1; }
+  ensure_json_or_die "$RESP_BODY" "/api/search (card)"
+  python3 - "$RESP_BODY" "$title" <<'PY' || true
 import sys, json
-fn, name = sys.argv[1], sys.argv[2]
+fn, want = sys.argv[1], sys.argv[2]
 try:
-    arr=json.loads(open(fn,'r',encoding='utf-8').read())
-    if isinstance(arr, dict): arr = arr.get('data', [])
-    for d in arr:
-        if isinstance(d, dict) and d.get('name') == name:
-            print(d.get('id','')); break
+    arr = json.loads(open(fn,'r',encoding='utf-8').read())
+    for it in arr:
+        if isinstance(it, dict) and it.get('model')=='card' and it.get('name')==want:
+            print(it.get('id',''))
+            break
 except Exception:
     pass
 PY
-)"
-  if [ -n "$CARD_ID" ]; then
-    echo "[ok] card existe '$title' id=$CARD_ID"
+}
+
+# Crea o devuelve id de una card nativa
+make_card() {
+  title="$1"; sql="$2"
+  # Existe?
+  CID="$(find_card_by_name "$title" || true)"
+  if [ -n "$CID" ]; then
+    echo "[ok] card existe '$title' id=$CID"
+    echo "$CID"
     return 0
   fi
-  echo "[info] creando card '$title'"
-  name_json="$(jescape "$title")"
-  sql_json="$(jescape "$sql")"
+
+  # Crear
   payload=$(cat <<JSON
 {
-  "name": "$name_json",
+  "name": "$(jescape "$title")",
   "dataset_query": {
     "type": "native",
-    "native": { "query": "$sql_json" },
+    "native": { "query": "$(jescape "$sql")" },
     "database": $DB_ID
   },
   "display": "table",
+  "collection_id": null,
   "visualization_settings": {}
 }
 JSON
 )
   curl_json_auth POST "/api/card" "$SESSION_ID" "$payload"
-  c=$(cat "$RESP_CODE")
-  [ "$c" = "200" ] || [ "$c" = "201" ] || { echo "Respuesta /api/card (POST) code=$c:"; cat "$RESP_BODY"; die "crear card fallo"; }
-  ensure_json_or_die "$RESP_BODY" "/api/card POST"
-  CARD_ID="$(get_json_value "$RESP_BODY" 'id')"
-  [ -z "$CARD_ID" ] && die "No se obtuvo CARD_ID al crear card '$title'"
-  echo "[ok] card creada '$title' id=$CARD_ID"
+  code=$(cat "$RESP_CODE")
+  if [ "$code" = "200" ] || [ "$code" = "201" ]; then
+    ensure_json_or_die "$RESP_BODY" "/api/card POST"
+    CID="$(get_json_value "$RESP_BODY" 'id')"
+    [ -z "$CID" ] && die "No se obtuvo card id tras crear '$title'"
+    echo "[ok] card creada '$title' id=$CID"
+    echo "$CID"
+    return 0
+  fi
+
+  # Si fallo por duplicado u otro 4xx/5xx, intento recuperar por busqueda
+  echo "[warn] crear card '$title' code=$code; cuerpo:"
+  cat "$RESP_BODY"; echo
+  CID="$(find_card_by_name "$title" || true)"
+  [ -n "$CID" ] && { echo "[ok] card ya existia '$title' id=$CID"; echo "$CID"; return 0; }
+  die "crear card fallo para '$title'"
 }
 
-ensure_dashboard() {
+# Define aqui tus 3 consultas SQL (ejemplos; usa las tuyas reales)
+SQL_1="SELECT COUNT(*) AS total_msgs FROM tweets;"
+SQL_2="SELECT sentiment, COUNT(*) AS c FROM tweets GROUP BY sentiment ORDER BY c DESC;"
+SQL_3="SELECT created_at::date AS dia, COUNT(*) AS c FROM tweets GROUP BY dia ORDER BY dia;"
+
+C1_ID="$(make_card "Total mensajes" "$SQL_1")"
+C2_ID="$(make_card "Conteo por sentimiento" "$SQL_2")"
+C3_ID="$(make_card "Mensajes por dia" "$SQL_3")"
+
+# Dashboard: buscar por nombre; si no existe, crearlo
+find_dashboard_by_name() {
   title="$1"
-  curl_json_auth GET "/api/dashboard" "$SESSION_ID"
-  c=$(cat "$RESP_CODE")
-  [ "$c" = "200" ] || { echo "Respuesta /api/dashboard (GET) code=$c:"; cat "$RESP_BODY"; die "listar dashboards fallo"; }
-  DASH_ID="$(python3 - "$RESP_BODY" "$title" <<'PY' || true
+  q="$(urlencode "$title")"
+  curl_json_auth GET "/api/search?q=$q&type=dashboard&archived=false" "$SESSION_ID"
+  code=$(cat "$RESP_CODE")
+  [ "$code" = "200" ] || { echo "[warn] /api/search (dashboard) code=$code"; cat "$RESP_BODY"; echo ""; echo ""; return 1; }
+  ensure_json_or_die "$RESP_BODY" "/api/search (dashboard)"
+  python3 - "$RESP_BODY" "$title" <<'PY' || true
 import sys, json
-fn, name = sys.argv[1], sys.argv[2]
+fn, want = sys.argv[1], sys.argv[2]
 try:
-    arr=json.loads(open(fn,'r',encoding='utf-8').read())
-    if isinstance(arr, dict): arr = arr.get('data', [])
-    for d in arr:
-        if isinstance(d, dict) and d.get('name') == name:
-            print(d.get('id','')); break
+    arr = json.loads(open(fn,'r',encoding='utf-8').read())
+    for it in arr:
+        if isinstance(it, dict) and it.get('model')=='dashboard' and it.get('name')==want:
+            print(it.get('id',''))
+            break
 except Exception:
     pass
 PY
-)"
-  if [ -n "$DASH_ID" ]; then
-    echo "[ok] dashboard existe '$title' id=$DASH_ID"
-    return 0
-  fi
-  echo "[info] creando dashboard '$title'"
-  name_json="$(jescape "$title")"
-  payload='{ "name": "'"$name_json"'" }'
-  curl_json_auth POST "/api/dashboard" "$SESSION_ID" "$payload"
-  c=$(cat "$RESP_CODE")
-  [ "$c" = "200" ] || [ "$c" = "201" ] || { echo "Respuesta /api/dashboard (POST) code=$c:"; cat "$RESP_BODY"; die "crear dashboard fallo"; }
-  ensure_json_or_die "$RESP_BODY" "/api/dashboard POST"
-  DASH_ID="$(get_json_value "$RESP_BODY" 'id')"
-  [ -z "$DASH_ID" ] && die "No se obtuvo DASH_ID"
-  echo "[ok] dashboard creado '$title' id=$DASH_ID"
 }
 
+create_dashboard() {
+  title="$1"
+  payload='{ "name": "'"$(jescape "$title")"'" }'
+  curl_json_auth POST "/api/dashboard" "$SESSION_ID" "$payload"
+  code=$(cat "$RESP_CODE")
+  [ "$code" = "200" ] || [ "$code" = "201" ] || { echo "Respuesta /api/dashboard code=$code:"; cat "$RESP_BODY"; die "crear dashboard fallo"; }
+  ensure_json_or_die "$RESP_BODY" "/api/dashboard POST"
+  get_json_value "$RESP_BODY" 'id'
+}
+
+DASH_ID="$(find_dashboard_by_name "$DASH_TITLE" || true)"
+if [ -z "$DASH_ID" ]; then
+  DASH_ID="$(create_dashboard "$DASH_TITLE")"
+  echo "[ok] dashboard creado id=$DASH_ID"
+else
+  echo "[ok] dashboard existe id=$DASH_ID"
+fi
+
+# Agregar cards al dashboard (add parameterized)
 add_card_to_dashboard() {
-  dash_id="$1"; card_id="$2"; col="${3:-0}"; row="${4:-0}"; sizeX="${5:-12}"; sizeY="${6:-8}"
-  # Verificar si ya esta agregada
-  curl_json_auth GET "/api/dashboard/$dash_id" "$SESSION_ID"
-  c=$(cat "$RESP_CODE")
-  [ "$c" = "200" ] || { echo "Respuesta /api/dashboard/:id (GET) code=$c:"; cat "$RESP_BODY"; die "leer dashboard fallo"; }
-  present="$(python3 - "$RESP_BODY" "$card_id" <<'PY' || true
-import sys, json
-fn, cid = sys.argv[1], sys.argv[2]
-try:
-    d=json.loads(open(fn,'r',encoding='utf-8').read())
-    for oc in d.get('ordered_cards', []):
-        if str(oc.get('card_id','')) == str(cid):
-            print("yes"); break
-except Exception:
-    pass
-PY
-)"
-  if [ "$present" = "yes" ]; then
-    echo "[ok] card $card_id ya esta en dashboard $dash_id"
-    return 0
-  fi
-  echo "[info] agregando card $card_id a dashboard $dash_id"
+  dash_id="$1"; card_id="$2"; x="$3"; y="$4"; w="$5"; h="$6"
   payload=$(cat <<JSON
 {
-  "cardId": $card_id,
-  "row": $row,
-  "col": $col,
-  "sizeX": $sizeX,
-  "sizeY": $sizeY,
-  "parameter_mappings": [],
+  "dashboard_id": $dash_id,
+  "card_id": $card_id,
+  "row": $y,
+  "col": $x,
+  "size_x": $w,
+  "size_y": $h,
   "visualization_settings": {}
 }
 JSON
 )
   curl_json_auth POST "/api/dashboard/$dash_id/cards" "$SESSION_ID" "$payload"
-  c=$(cat "$RESP_CODE")
-  [ "$c" = "200" ] || [ "$c" = "201" ] || { echo "Respuesta /api/dashboard/:id/cards (POST) code=$c:"; cat "$RESP_BODY"; die "agregar card a dashboard fallo"; }
-  echo "[ok] card $card_id agregada a dashboard $dash_id"
+  code=$(cat "$RESP_CODE")
+  [ "$code" = "200" ] || [ "$code" = "201" ] || { echo "Respuesta /api/dashboard/$dash_id/cards code=$code:"; cat "$RESP_BODY"; die "agregar card al dashboard fallo"; }
 }
 
-# Cards de ejemplo basadas en information_schema
-CARD1_TITLE="Tables in ${DB_NAME}"
-CARD1_SQL="SELECT TABLE_SCHEMA, TABLE_NAME FROM information_schema.tables WHERE TABLE_SCHEMA='${DB_NAME}' ORDER BY TABLE_NAME LIMIT 100;"
-
-CARD2_TITLE="Tables count in ${DB_NAME}"
-CARD2_SQL="SELECT COUNT(*) AS tables_count FROM information_schema.tables WHERE TABLE_SCHEMA='${DB_NAME}';"
-
-CARD3_TITLE="Top 20 by rows in ${DB_NAME}"
-CARD3_SQL="SELECT TABLE_NAME, TABLE_ROWS FROM information_schema.tables WHERE TABLE_SCHEMA='${DB_NAME}' ORDER BY TABLE_ROWS DESC LIMIT 20;"
-
-make_card "$CARD1_TITLE" "$CARD1_SQL"
-CARD1_ID="$CARD_ID"
-
-make_card "$CARD2_TITLE" "$CARD2_SQL"
-CARD2_ID="$CARD_ID"
-
-make_card "$CARD3_TITLE" "$CARD3_SQL"
-CARD3_ID="$CARD_ID"
-
-ensure_dashboard "$DASH_TITLE"
-DASH_ID="$DASH_ID"
-
-# Layout simple
-add_card_to_dashboard "$DASH_ID" "$CARD2_ID" 0 0 6 6
-add_card_to_dashboard "$DASH_ID" "$CARD1_ID" 6 0 12 10
-add_card_to_dashboard "$DASH_ID" "$CARD3_ID" 0 10 12 10
-
-echo "OK: Metabase listo; DB '${DB_DISPLAY}' asegurada; dashboard '${DASH_TITLE}' con 3 cards."
+# Layout basico 3 widgets
+add_card_to_dashboard "$DASH_ID" "$C1_ID" 0 0 8 4
+add_card_to_dashboard "$DASH_ID" "$C2_ID" 8 0 8 4
+add_card_to_dashboard "$DASH_ID" "$C3_ID" 0 4 16 6
+echo "[ok] cards agregadas al dashboard"
