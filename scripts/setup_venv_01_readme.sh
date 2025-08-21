@@ -32,7 +32,7 @@ source .venv/scripts/deactivate
 
 python scripts/send_kafka_burst.py --bootstrap 51.57.73.26:29092 --topic user-topic \
   --clients 10 --duration 300 \
-  --text-file ./corpus.txt \
+  --text-file scripts/corpus.txt \
   --min-delay 0.5 --max-delay 3.0
 
 #Ejecuta el consumer con un grupo NUEVO y commits más frecuentes

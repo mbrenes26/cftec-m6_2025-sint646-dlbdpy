@@ -177,3 +177,105 @@ Las 3 tarjetas se agregan al tablero **`Sentiment_Streaming_Kafka_Mongo_DL_MySQL
 ### 🧭 En una frase
 **Kafka → Mongo (crudo) → DL (clasifica) → MySQL (DW) → Metabase (BI)**, todo reproducible desde GitHub Actions y Docker en una VM de Azure.
 
+
+
+---
+
+# Explicación del código: utilidades + carga de modelo (Transformers)
+
+A continuación detallo **qué hace cada bloque** del fragmento que compartiste y qué necesitas para dejarlo listo para inferir sentimientos.
+
+## 1) Importaciones
+- `json, time, sys, datetime, timezone, typing` → utilidades estándar (serialización, tiempos, tipos).
+- `mysql.connector` → cliente para escribir/leer en **MySQL**.
+- `pymongo.MongoClient, ReturnDocument` → cliente para **MongoDB**.
+- `transformers.AutoTokenizer, AutoModelForSequenceClassification` → carga de **tokenizador y modelo** de Hugging Face para clasificación de texto.
+- `torch` y `torch.nn.functional as F` → ejecución del modelo en CPU/GPU y `softmax` para probabilidades.
+- `tqdm.auto.tqdm` → barras de progreso.
+
+## 2) Utilidades
+```python
+def utcnow_iso():
+    return datetime.now(timezone.utc).isoformat()
+```
+Devuelve la hora **UTC** con formato ISO-8601 (útil para trazabilidad).
+
+```python
+def essential_str(v):
+    return "" if v is None else str(v)
+```
+Normaliza valores a `str` evitando `None` (por ejemplo, al construir documentos/filas).
+
+## 3) Autodiagnóstico de versiones
+```python
+print("Versiones:")
+for pkg in ["torch","transformers","pymongo","mysql.connector","ipywidgets","tqdm"]:
+    ...  # importa dinámicamente y muestra __version__
+```
+Intenta importar cada paquete y muestra su **versión**. Si alguno falla, imprime el error, lo que ayuda a detectar entornos incompletos.
+
+## 4) Carga del modelo de sentimiento
+```python
+print("
+Cargando modelo:", MODEL_NAME)
+tok = AutoTokenizer.from_pretrained(MODEL_NAME)
+mdl = AutoModelForSequenceClassification.from_pretrained(MODEL_NAME)
+mdl.eval()
+id2label = getattr(
+    mdl.config, "id2label",
+    {0:"Very Negative",1:"Negative",2:"Neutral",3:"Positive",4:"Very Positive"}
+)
+print("Clases:", id2label)
+```
+- Espera que exista una variable **`MODEL_NAME`** (por ejemplo, `'cardiffnlp/twitter-roberta-base-sentiment-latest'` o similar).
+- Descarga (o carga desde caché) el **tokenizador** y el **modelo** de clasificación.
+- `mdl.eval()` pone el modelo en modo **evaluación** (desactiva dropout, etc.).
+- Obtiene el mapeo de **índice → etiqueta** desde la configuración del modelo; si no existe, usa un mapeo por defecto de **5 clases** (`Very Negative`→`Very Positive`).
+
+> ⚠️ Nota: ese mapeo por defecto solo es válido para modelos **5‑clase**. Si usas uno de **2 o 3 clases**, confía en `mdl.config.id2label` y **no** fuerces el fallback.
+
+## 5) ¿Qué falta para inferir?
+Los pasos mínimos para pasar de texto → predicción son:
+1. **Elegir dispositivo** (CPU/GPU) y mover el modelo.
+2. **Tokenizar** el/los textos con el tokenizador.
+3. Pasar tensores al modelo en `torch.no_grad()` y aplicar `softmax`.
+4. Convertir índices a **etiquetas** con `id2label` y, opcionalmente, guardar en Mongo/MySQL.
+
+### Snippet de inferencia seguro
+```python
+import torch, torch.nn.functional as F
+
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+mdl.to(DEVICE)
+
+texts = [
+    "I love this product!",
+    "meh, it's fine",
+    "This is absolutely terrible"
+]
+enc = tok(texts, padding=True, truncation=True, max_length=256, return_tensors="pt")
+enc = {k: v.to(DEVICE) for k, v in enc.items()}
+
+with torch.no_grad():
+    logits = mdl(**enc).logits
+    probs = F.softmax(logits, dim=-1)
+
+max_scores, max_idx = probs.max(dim=-1)
+labels = [id2label[int(i)] for i in max_idx]
+results = list(zip(texts, labels, max_scores.cpu().tolist()))
+print(results)
+```
+
+## 6) Integración típica con Mongo/MySQL (idea general)
+- **MongoDB**: guardar cada documento con `{ _id, text, pred_label, scores, proc: {ts: utcnow_iso(), model: MODEL_NAME} }`.
+- **MySQL**: tabla tipo `dw_messages(id, user_id, comment, ingest_ts, sentiment_label, sentiment_score, raw_json)`.
+
+## 7) Errores comunes y cómo evitarlos
+- **`NameError: MODEL_NAME`** → define `MODEL_NAME` antes de cargar.
+- **Descarga del modelo falla** (sin internet) → precachea el modelo o monta el directorio `~/.cache/huggingface`.
+- **Clases no coinciden** → valida `mdl.config.id2label` y adapta tu mapeo/SQL.
+- **GPU no usada** → mueve modelo y tensores con `.to(DEVICE)`.
+- **Rendimiento** → procesa en lotes con `tqdm`, usa `batch_size` razonable y `torch.inference_mode()` para menos overhead.
+
+¿Quieres que agregue el bloque de **persistencia** (insert a Mongo y upsert a MySQL) con manejo de reintentos y métricas? Lo puedo sumar aquí mismo.
+
